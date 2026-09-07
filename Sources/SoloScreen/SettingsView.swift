@@ -13,6 +13,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+            builtinSection
             displaysSection
             controlSection
             footer
@@ -29,6 +30,36 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// Состояние встроенного экрана — главный переключатель приложения, поэтому
+    /// он стоит отдельной секцией и виден всегда, а не прячется внутри карточки
+    /// внешнего экрана.
+    private var builtinSection: some View {
+        GroupBox("Встроенный экран") {
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: model.soloBinding) {
+                    Text("Выводить только на внешний экран")
+                        .font(.body.weight(.medium))
+                }
+                .toggleStyle(.switch)
+                .disabled(!model.canGoSolo)
+
+                Text(builtinHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var builtinHint: String {
+        if !model.canGoSolo {
+            return "Недоступно: внешних экранов нет, гасить единственный экран нельзя."
+        }
+        return "Гасит и возвращает встроенный экран прямо сейчас. "
+            + "То же делают горячая клавиша \(model.hotKeyLabel) и пункт в строке меню."
     }
 
     // MARK: Экраны
@@ -56,12 +87,6 @@ struct SettingsView: View {
     private func displayRow(_ display: DisplaySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(display.name).font(.headline)
-
-            Toggle("Выводить только на этот экран", isOn: model.soloBinding)
-                .disabled(!model.canGoSolo)
-            Text("Гасит встроенный экран прямо сейчас. Тем же управляет горячая клавиша.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             Toggle("Гасить встроенный автоматически при подключении", isOn: model.trustBinding(for: display))
             Text("Только для отмеченных устройств. Проектор и обычный монитор ничего не запускают.")

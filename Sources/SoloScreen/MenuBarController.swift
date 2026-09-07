@@ -53,8 +53,10 @@ final class MenuBarController: NSObject {
         return item
     }()
 
+    /// Пункт-тумблер: галочка показывает текущее состояние, а не только
+    /// предлагает действие. Так видно, включён ли режим, ещё до нажатия.
     private lazy var toggleItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Выключить встроенный экран",
+        let item = NSMenuItem(title: "Только внешний экран",
                               action: #selector(toggleBuiltin), keyEquivalent: "")
         item.target = self
         return item
@@ -105,10 +107,11 @@ final class MenuBarController: NSObject {
         statusItem.button?.image = icon(builtinEnabled: state.builtinEnabled)
         statusItem.button?.image?.isTemplate = true
 
-        toggleItem.title = state.builtinEnabled ? "Выключить встроенный экран" : "Включить встроенный экран"
+        toggleItem.state = state.builtinEnabled ? .off : .on
         // Гасить последний экран нельзя — держим пункт недоступным, чтобы это
         // было видно до нажатия.
         toggleItem.isEnabled = !state.externals.isEmpty || !state.builtinEnabled
+        applyHotKeyLabel(to: toggleItem)
 
         let hasTarget = coordinator.brightnessTarget != nil
         brightnessSlider.isEnabled = hasTarget
@@ -119,6 +122,25 @@ final class MenuBarController: NSObject {
             : "Яркость внешнего экрана"
 
         rebuildTrustedSubmenu(state)
+    }
+
+    /// Показывает назначенное сочетание справа от пункта меню.
+    private func applyHotKeyLabel(to item: NSMenuItem) {
+        let combo = HotKeyManager.stored
+        let key = KeyCombo.keyLabel(for: combo.keyCode)
+        // Отрисовать можно только односимвольные клавиши; для Return или F5
+        // NSMenuItem ждёт служебные символы, которых у нас нет.
+        guard key.count == 1 else {
+            item.keyEquivalent = ""
+            return
+        }
+        item.keyEquivalent = key.lowercased()
+        var mask: NSEvent.ModifierFlags = []
+        if combo.modifiers.contains(.control) { mask.insert(.control) }
+        if combo.modifiers.contains(.option)  { mask.insert(.option) }
+        if combo.modifiers.contains(.shift)   { mask.insert(.shift) }
+        if combo.modifiers.contains(.command) { mask.insert(.command) }
+        item.keyEquivalentModifierMask = mask
     }
 
     private func statusText(for state: Coordinator.State) -> String {
