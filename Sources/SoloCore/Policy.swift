@@ -85,6 +85,16 @@ public enum Policy {
         }
     }
 
+    /// Оверрайд для явного переключения тумблером в настройках или меню.
+    ///
+    /// Как и у горячей клавиши, погасить встроенный экран можно только когда
+    /// есть внешний.
+    public static func override(settingBuiltinEnabled enabled: Bool,
+                                _ input: PolicyInput) -> ManualOverride {
+        guard input.hasAnyExternal else { return .none }
+        return enabled ? .forceBuiltinOn : .forceBuiltinOff
+    }
+
     /// Новый оверрайд после нажатия горячей клавиши.
     ///
     /// Гасить встроенный экран разрешено только когда есть внешний: иначе

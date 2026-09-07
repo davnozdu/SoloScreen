@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.settingsModel?.reload()
         }
 
-        hotKey.register(HotKeyChoice.current.combo) { coordinator.toggleBuiltin() }
+        hotKey.register(HotKeyManager.stored) { coordinator.toggleBuiltin() }
         installSignalHandlers()
         _ = UpdaterService.shared
 
@@ -59,9 +59,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let model = SettingsModel()
-        model.onHotKeyChange = { [weak self] choice in
-            self?.hotKey.register(choice.combo) { Coordinator.shared.toggleBuiltin() }
+        model.onHotKeyChange = { [weak self] combo in
+            self?.hotKey.register(combo) { Coordinator.shared.toggleBuiltin() }
         }
+        // На время записи глобальная клавиша снимается, иначе Carbon перехватил
+        // бы её раньше окна и переназначить сочетание на само себя не вышло бы.
+        model.recorder.configure(
+            suspend: { [weak self] in self?.hotKey.unregister() },
+            resume: { [weak self] in
+                self?.hotKey.register(HotKeyManager.stored) { Coordinator.shared.toggleBuiltin() }
+            }
+        )
         settingsModel = model
 
         let hosting = NSHostingController(rootView: SettingsView(model: model))

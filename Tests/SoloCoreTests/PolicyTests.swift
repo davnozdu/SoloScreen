@@ -91,6 +91,24 @@ struct ManualOverrideTests {
         #expect(Policy.toggle(input([builtinDisplay, snapshot(glasses)], builtinEnabled: false)) == .forceBuiltinOn)
     }
 
+    @Test("Тумблер гасит встроенный при подключённом внешнем")
+    func тумблерГасит() {
+        let i = input([builtinDisplay, snapshot(glasses)], builtinEnabled: true)
+        #expect(Policy.override(settingBuiltinEnabled: false, i) == .forceBuiltinOff)
+    }
+
+    @Test("Тумблер возвращает встроенный")
+    func тумблерВозвращает() {
+        let i = input([builtinDisplay, snapshot(glasses)], builtinEnabled: false)
+        #expect(Policy.override(settingBuiltinEnabled: true, i) == .forceBuiltinOn)
+    }
+
+    @Test("Тумблер не гасит последний экран")
+    func тумблерБезопасен() {
+        let i = input([builtinDisplay], builtinEnabled: true)
+        #expect(Policy.override(settingBuiltinEnabled: false, i) == .none)
+    }
+
     @Test("Хоткей не гасит последний экран")
     func хоткейБезопасен() {
         #expect(Policy.toggle(input([builtinDisplay], builtinEnabled: true)) == .none)

@@ -6,9 +6,13 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var externals: [DisplaySnapshot] = []
     @Published private(set) var statusText: String = ""
     @Published private(set) var canCheckUpdates: Bool = false
+    @Published private(set) var builtinEnabled: Bool = true
+    @Published private(set) var hotKeyLabel: String = KeyCombo.default.label
+
+    let recorder = HotKeyRecorder()
 
     private let coordinator: Coordinator
-    var onHotKeyChange: ((HotKeyChoice) -> Void)?
+    var onHotKeyChange: ((KeyCombo) -> Void)?
 
     init(coordinator: Coordinator = .shared) {
         self.coordinator = coordinator
@@ -21,8 +25,10 @@ final class SettingsModel: ObservableObject {
 
     func reload() {
         externals = coordinator.state.externals
+        builtinEnabled = coordinator.state.builtinEnabled
         canCheckUpdates = UpdaterService.shared.canCheck
         statusText = Self.status(for: coordinator.state)
+        hotKeyLabel = HotKeyManager.stored.label
         objectWillChange.send()
     }
 
@@ -36,6 +42,23 @@ final class SettingsModel: ObservableObject {
         return "Работают оба экрана."
     }
 
+    // MARK: Экраны
+
+    /// Ручной тумблер: гасит встроенный экран прямо сейчас, не дожидаясь
+    /// автоматики и не требуя перетыкать кабель.
+    var soloBinding: Binding<Bool> {
+        Binding(
+            get: { [weak self] in !(self?.builtinEnabled ?? true) },
+            set: { [weak self] solo in
+                self?.coordinator.setBuiltinEnabled(!solo)
+                self?.reload()
+            }
+        )
+    }
+
+    /// Пока внешних экранов нет, гасить встроенный нельзя.
+    var canGoSolo: Bool { !externals.isEmpty }
+
     func trustBinding(for display: DisplaySnapshot) -> Binding<Bool> {
         Binding(
             get: { [weak self] in self?.coordinator.trustedDevices.contains(display.identity) ?? false },
@@ -46,15 +69,23 @@ final class SettingsModel: ObservableObject {
         )
     }
 
-    var hotKeyBinding: Binding<HotKeyChoice> {
-        Binding(
-            get: { HotKeyChoice.current },
-            set: { [weak self] choice in
-                HotKeyChoice.current = choice
-                self?.onHotKeyChange?(choice)
-                self?.objectWillChange.send()
-            }
-        )
+    // MARK: Горячая клавиша
+
+    func startRecording() {
+        recorder.start { [weak self] combo in
+            guard let self else { return }
+            HotKeyManager.stored = combo
+            self.onHotKeyChange?(combo)
+            self.hotKeyLabel = combo.label
+            self.objectWillChange.send()
+        }
+    }
+
+    func resetHotKey() {
+        HotKeyManager.stored = .default
+        onHotKeyChange?(.default)
+        hotKeyLabel = KeyCombo.default.label
+        objectWillChange.send()
     }
 
     var loginItemBinding: Binding<Bool> {

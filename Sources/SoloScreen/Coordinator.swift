@@ -214,12 +214,21 @@ final class Coordinator {
 
     // MARK: Ручное управление
 
+    /// Явное переключение состояния встроенного экрана тумблером.
+    func setBuiltinEnabled(_ enabled: Bool) {
+        state.override = Policy.override(settingBuiltinEnabled: enabled, currentInput())
+        refresh()
+    }
+
+    private func currentInput() -> PolicyInput {
+        PolicyInput(displays: state.displays,
+                    builtinEnabled: state.builtinEnabled,
+                    trusted: trustedDevices.all,
+                    override: state.override)
+    }
+
     func toggleBuiltin() {
-        let input = PolicyInput(displays: state.displays,
-                                builtinEnabled: state.builtinEnabled,
-                                trusted: trustedDevices.all,
-                                override: state.override)
-        state.override = Policy.toggle(input)
+        state.override = Policy.toggle(currentInput())
         refresh()
     }
 

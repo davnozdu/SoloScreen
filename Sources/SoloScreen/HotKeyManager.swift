@@ -1,27 +1,37 @@
 import AppKit
 import Carbon.HIToolbox
+import SoloCore
 
 /// Глобальная горячая клавиша.
 ///
 /// Carbon `RegisterEventHotKey` выбран намеренно вместо `CGEventTap`: он не
 /// требует разрешения «Универсальный доступ», поэтому приложение работает сразу
-/// после установки, без похода в настройки безопасности.
+/// после установки. Плата за это — нельзя повесить действие на голый
+/// модификатор, что и отражено в `KeyCombo.isValid`.
 final class HotKeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var action: (() -> Void)?
+    private(set) var current: KeyCombo?
 
     private static let signature: OSType = 0x534F4C4F // 'SOLO'
 
-    /// По умолчанию ⌃⌥⌘D.
-    struct Combo {
-        var keyCode: UInt32 = UInt32(kVK_ANSI_D)
-        var modifiers: UInt32 = UInt32(controlKey | optionKey | cmdKey)
+    /// Хранилище выбранного пользователем сочетания.
+    static var stored: KeyCombo {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: "HotKeyCombo"),
+                  let combo = KeyCombo.decode(raw) else { return .default }
+            return combo
+        }
+        set { UserDefaults.standard.set(newValue.encoded, forKey: "HotKeyCombo") }
     }
 
-    func register(_ combo: Combo = Combo(), action: @escaping () -> Void) {
+    @discardableResult
+    func register(_ combo: KeyCombo, action: @escaping () -> Void) -> Bool {
         unregister()
+        guard combo.isValid else { return false }
         self.action = action
+        self.current = combo
 
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
@@ -41,8 +51,16 @@ final class HotKeyManager {
                             Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
 
         let hotKeyID = EventHotKeyID(signature: HotKeyManager.signature, id: 1)
-        RegisterEventHotKey(combo.keyCode, combo.modifiers, hotKeyID,
-                            GetApplicationEventTarget(), 0, &hotKeyRef)
+        let status = RegisterEventHotKey(UInt32(combo.keyCode),
+                                         HotKeyManager.carbonModifiers(combo.modifiers),
+                                         hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        if status != noErr {
+            Log.state("не удалось зарегистрировать сочетание \(combo.label): код \(status)")
+            unregister()
+            return false
+        }
+        Log.state("горячая клавиша: \(combo.label)")
+        return true
     }
 
     func unregister() {
@@ -50,6 +68,16 @@ final class HotKeyManager {
         if let handlerRef { RemoveEventHandler(handlerRef) }
         hotKeyRef = nil
         handlerRef = nil
+        current = nil
+    }
+
+    private static func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
+        var result: Int = 0
+        if modifiers.contains(.control) { result |= controlKey }
+        if modifiers.contains(.option)  { result |= optionKey }
+        if modifiers.contains(.shift)   { result |= shiftKey }
+        if modifiers.contains(.command) { result |= cmdKey }
+        return UInt32(result)
     }
 
     deinit { unregister() }
