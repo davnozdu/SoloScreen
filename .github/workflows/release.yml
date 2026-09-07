@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия, например 0.1.0"
+        required: true
+
+jobs:
+  release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Определить версию
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Версия: $VERSION"
+
+      - name: Тесты
+        run: swift test
+
+      - name: Импорт сертификата подписи
+        env:
+          CERT_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            echo "Секрет SIGNING_CERTIFICATE_P12 не задан — сборка будет ad-hoc," \
+                 "и Sparkle не сможет обновить уже установленную копию." >&2
+            echo "identity=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KCPASS=$(openssl rand -base64 24)
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KCPASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KCPASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "identity=SoloScreen Self-Signed" >> "$GITHUB_ENV"
+
+      - name: Сборка приложения
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: CODESIGN_IDENTITY="$identity" ./Scripts/build-app.sh
+
+      - name: Инвариант — аудио не затрагивается
+        run: |
+          if otool -L dist/SoloScreen.app/Contents/MacOS/SoloScreen | grep -iqE "coreaudio|audiotoolbox"; then
+            echo "::error::приложение слинковано с аудио-фреймворками"
+            exit 1
+          fi
+
+      - name: Сборка DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./Scripts/make-dmg.sh
+
+      - name: Формирование appcast
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./Scripts/make-appcast.sh
+
+      - name: Публикация релиза
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          NOTES=$(cat <<'EOF'
+          ## Установка
+
+          1. Скачайте DMG и перетащите SoloScreen в «Программы».
+          2. При первом запуске macOS предупредит о неизвестном разработчике:
+             щёлкните по приложению правой кнопкой и выберите «Открыть».
+             Приложение подписано собственным сертификатом, без платного
+             Apple Developer ID, поэтому обход нужен один раз.
+          3. Подключите очки, откройте меню в строке меню и отметьте их в списке
+             «Гасить ноутбук для устройства».
+
+          Дальнейшие обновления устанавливаются автоматически.
+          EOF
+          )
+          gh release create "v$VERSION" \
+            "dist/SoloScreen-$VERSION.dmg" \
+            "dist/appcast.xml" \
+            --title "SoloScreen $VERSION" \
+            --notes "$NOTES" || \
+          gh release upload "v$VERSION" \
+            "dist/SoloScreen-$VERSION.dmg" "dist/appcast.xml" --clobber

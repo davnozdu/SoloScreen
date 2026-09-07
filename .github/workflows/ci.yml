@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Тесты
+        run: swift test
+
+      - name: Сборка приложения
+        run: VERSION=0.0.0-ci BUILD_NUMBER=0 ./Scripts/build-app.sh
+
+      - name: Инвариант — аудио не затрагивается
+        run: |
+          # Приложение не должно уметь трогать звук: переключение вывода на очки
+          # обязано остаться делом системы и пользователя.
+          if otool -L dist/SoloScreen.app/Contents/MacOS/SoloScreen | grep -iqE "coreaudio|audiotoolbox"; then
+            echo "::error::приложение слинковано с аудио-фреймворками"
+            exit 1
+          fi
+          echo "аудио-фреймворки не слинкованы"

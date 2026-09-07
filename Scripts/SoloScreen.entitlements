@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Приложение подписывается без Apple Developer ID, поэтому у бинаря и у
+         вложенного Sparkle.framework нет общего Team ID. Библиотечная
+         валидация Hardened Runtime в такой ситуации отказывается загружать
+         фреймворк, поэтому её приходится отключить. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
