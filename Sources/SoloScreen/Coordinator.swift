@@ -16,7 +16,11 @@ final class Coordinator {
         var brightness: BrightnessLevel = .default
         var override: ManualOverride = .none
 
-        var externals: [DisplaySnapshot] { displays.filter { !$0.isBuiltin } }
+        /// Заглушки системы из списка исключены — показывать их пользователю
+        /// как подключённый экран нельзя.
+        var externals: [DisplaySnapshot] {
+            displays.filter { !$0.isBuiltin && !$0.identity.isPlaceholder }
+        }
     }
 
     private(set) var state = State()

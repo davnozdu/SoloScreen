@@ -124,23 +124,14 @@ final class MenuBarController: NSObject {
         rebuildTrustedSubmenu(state)
     }
 
-    /// Показывает назначенное сочетание справа от пункта меню.
+    /// Сочетание показывается в самом заголовке, а не через `keyEquivalent`.
+    ///
+    /// То же сочетание уже висит на глобальной горячей клавише Carbon, и
+    /// `keyEquivalent` добавил бы второй обработчик: при активном приложении
+    /// экран переключался бы дважды подряд, что со стороны выглядит как
+    /// неработающая клавиша.
     private func applyHotKeyLabel(to item: NSMenuItem) {
-        let combo = HotKeyManager.stored
-        let key = KeyCombo.keyLabel(for: combo.keyCode)
-        // Отрисовать можно только односимвольные клавиши; для Return или F5
-        // NSMenuItem ждёт служебные символы, которых у нас нет.
-        guard key.count == 1 else {
-            item.keyEquivalent = ""
-            return
-        }
-        item.keyEquivalent = key.lowercased()
-        var mask: NSEvent.ModifierFlags = []
-        if combo.modifiers.contains(.control) { mask.insert(.control) }
-        if combo.modifiers.contains(.option)  { mask.insert(.option) }
-        if combo.modifiers.contains(.shift)   { mask.insert(.shift) }
-        if combo.modifiers.contains(.command) { mask.insert(.command) }
-        item.keyEquivalentModifierMask = mask
+        item.title = "Только внешний экран  (\(HotKeyManager.stored.label))"
     }
 
     private func statusText(for state: Coordinator.State) -> String {

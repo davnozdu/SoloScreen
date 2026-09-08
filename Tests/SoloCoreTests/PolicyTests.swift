@@ -4,6 +4,8 @@ import Testing
 private let glasses = DisplayIdentity(vendorID: 0x0510, modelID: 0x1001, serialNumber: 0x1)
 private let projector = DisplayIdentity(vendorID: 0x09d1, modelID: 0x8002, serialNumber: 0x47c)
 private let builtinID = DisplayIdentity(vendorID: 0x0610, modelID: 0xa051, serialNumber: 0xfd626d62)
+/// Заглушка, которую macOS подставляет, когда физических экранов не осталось.
+private let placeholder = DisplayIdentity(vendorID: 0x756E_6B6E, modelID: 0x7669_7274, serialNumber: 0)
 
 private func snapshot(_ identity: DisplayIdentity, builtin: Bool = false, id: UInt32 = 2) -> DisplaySnapshot {
     DisplaySnapshot(displayID: id, identity: identity, name: "test", isBuiltin: builtin)
@@ -26,16 +28,56 @@ struct SafetyTests {
 
     @Test("Оверрайд сбрасывается, когда внешних нет")
     func сбрасываетОверрайд() {
-        let d = Policy.decide(input([builtinDisplay], builtinEnabled: false, override: .forceBuiltinOff))
+        let d = Policy.decide(input([builtinDisplay], builtinEnabled: false,
+                                    override: .forceBuiltinOff(anchor: glasses)))
         #expect(d.action == .enable)
         #expect(d.override == .none)
     }
 
     @Test("forceBuiltinOff не переживает отключение последнего внешнего")
     func оверрайдНеОставляетБезЭкрана() {
-        let d = Policy.decide(input([builtinDisplay], builtinEnabled: true, override: .forceBuiltinOff))
+        let d = Policy.decide(input([builtinDisplay], builtinEnabled: true,
+                                    override: .forceBuiltinOff(anchor: glasses)))
         #expect(d.action == .leaveAsIs)
         #expect(d.override == .none)
+    }
+
+    @Test("Заглушка системы не считается внешним экраном")
+    func заглушкаНеЭкран() {
+        // Когда гаснут все физические экраны, macOS подставляет виртуальный
+        // дисплей. Принимать его за внешний нельзя.
+        let i = input([snapshot(placeholder, id: 7)], builtinEnabled: false, override: .none)
+        #expect(!i.hasAnyExternal)
+        #expect(Policy.decide(i).action == .enable)
+    }
+
+    @Test("Ручной режим отпускает экран, когда очки отключили физически")
+    func ручнойРежимОтпускает() {
+        // Ровно наблюдавшийся случай: встроенный погашен вручную, очки
+        // выдернули из порта, вместо них осталась заглушка.
+        let i = input([snapshot(placeholder, id: 7)], builtinEnabled: false,
+                      override: .forceBuiltinOff(anchor: glasses))
+        let d = Policy.decide(i)
+        #expect(d.action == .enable)
+        #expect(d.override == .none)
+    }
+
+    @Test("Ручной режим отпускает экран и при подмене другим внешним")
+    func якорьИсчез() {
+        // Очки отключили, но остался проектор: держать встроенный выключенным
+        // ради экрана, которого больше нет, незачем.
+        let i = input([builtinDisplay, snapshot(projector)], builtinEnabled: false,
+                      override: .forceBuiltinOff(anchor: glasses))
+        let d = Policy.decide(i)
+        #expect(d.action == .enable)
+        #expect(d.override == .none)
+    }
+
+    @Test("Пока очки на месте, ручной режим держится")
+    func якорьНаМесте() {
+        let i = input([builtinDisplay, snapshot(glasses)], builtinEnabled: true,
+                      override: .forceBuiltinOff(anchor: glasses))
+        #expect(Policy.decide(i).action == .disable)
     }
 }
 
@@ -77,13 +119,15 @@ struct ManualOverrideTests {
     @Test("forceBuiltinOff гасит экран при недоверенном внешнем")
     func гаситВручную() {
         let d = Policy.decide(input([builtinDisplay, snapshot(projector)],
-                                    builtinEnabled: true, override: .forceBuiltinOff))
+                                    builtinEnabled: true,
+                                    override: .forceBuiltinOff(anchor: projector)))
         #expect(d.action == .disable)
     }
 
     @Test("Хоткей гасит экран, когда есть внешний")
     func хоткейГасит() {
-        #expect(Policy.toggle(input([builtinDisplay, snapshot(glasses)], builtinEnabled: true)) == .forceBuiltinOff)
+        #expect(Policy.toggle(input([builtinDisplay, snapshot(glasses)], builtinEnabled: true))
+                == .forceBuiltinOff(anchor: glasses))
     }
 
     @Test("Хоткей возвращает погашенный экран")
@@ -94,7 +138,7 @@ struct ManualOverrideTests {
     @Test("Тумблер гасит встроенный при подключённом внешнем")
     func тумблерГасит() {
         let i = input([builtinDisplay, snapshot(glasses)], builtinEnabled: true)
-        #expect(Policy.override(settingBuiltinEnabled: false, i) == .forceBuiltinOff)
+        #expect(Policy.override(settingBuiltinEnabled: false, i) == .forceBuiltinOff(anchor: glasses))
     }
 
     @Test("Тумблер возвращает встроенный")

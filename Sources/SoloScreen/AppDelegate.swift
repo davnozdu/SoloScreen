@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBar: MenuBarController?
     private var settingsWindow: NSWindow?
     private var settingsModel: SettingsModel?
@@ -78,10 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         window.center()
+        window.delegate = self
         settingsWindow = window
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Пока идёт запись сочетания, глобальная клавиша снята. Без отмены записи
+    /// закрытое окно оставило бы её снятой до перезапуска приложения.
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === settingsWindow else { return }
+        settingsModel?.recorder.cancel()
     }
 
     // MARK: Сигналы

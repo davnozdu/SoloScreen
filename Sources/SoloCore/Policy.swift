@@ -1,13 +1,21 @@
 import Foundation
 
 /// Ручное переопределение автоматики, выставляемое горячей клавишей или меню.
-public enum ManualOverride: String, Sendable {
+public enum ManualOverride: Equatable, Sendable {
     /// Автоматика решает сама.
     case none
     /// Пользователь принудительно вернул встроенный экран, не отключая очки.
     case forceBuiltinOn
-    /// Пользователь принудительно погасил встроенный экран.
-    case forceBuiltinOff
+    /// Пользователь принудительно погасил встроенный экран ради конкретного
+    /// внешнего. Экран запоминается, чтобы отключение именно его снимало
+    /// переопределение: иначе выключенный встроенный так и остался бы
+    /// выключенным.
+    case forceBuiltinOff(anchor: DisplayIdentity?)
+
+    public var isForcedOff: Bool {
+        if case .forceBuiltinOff = self { return true }
+        return false
+    }
 }
 
 /// Что сделать со встроенным экраном.
@@ -36,7 +44,10 @@ public struct PolicyInput: Sendable {
         self.override = override
     }
 
-    public var externals: [DisplaySnapshot] { displays.filter { !$0.isBuiltin } }
+    /// Заглушки системы внешними экранами не считаются.
+    public var externals: [DisplaySnapshot] {
+        displays.filter { !$0.isBuiltin && !$0.identity.isPlaceholder }
+    }
     public var hasAnyExternal: Bool { !externals.isEmpty }
     public var hasTrustedExternal: Bool { externals.contains { trusted.contains($0.identity) } }
 }
@@ -71,9 +82,15 @@ public enum Policy {
         case .forceBuiltinOn:
             return PolicyDecision(action: input.builtinEnabled ? .leaveAsIs : .enable,
                                   override: .forceBuiltinOn)
-        case .forceBuiltinOff:
+        case .forceBuiltinOff(let anchor):
+            // Экран, ради которого гасили встроенный, отключили — держать
+            // встроенный выключенным больше не за чем.
+            if let anchor, !input.externals.contains(where: { $0.identity == anchor }) {
+                return PolicyDecision(action: input.builtinEnabled ? .leaveAsIs : .enable,
+                                      override: .none)
+            }
             return PolicyDecision(action: input.builtinEnabled ? .disable : .leaveAsIs,
-                                  override: .forceBuiltinOff)
+                                  override: .forceBuiltinOff(anchor: anchor))
         case .none:
             let shouldDisable = input.hasTrustedExternal
             if shouldDisable {
@@ -92,7 +109,7 @@ public enum Policy {
     public static func override(settingBuiltinEnabled enabled: Bool,
                                 _ input: PolicyInput) -> ManualOverride {
         guard input.hasAnyExternal else { return .none }
-        return enabled ? .forceBuiltinOn : .forceBuiltinOff
+        return enabled ? .forceBuiltinOn : .forceBuiltinOff(anchor: input.externals.first?.identity)
     }
 
     /// Новый оверрайд после нажатия горячей клавиши.
@@ -101,6 +118,8 @@ public enum Policy {
     /// нажатие оставило бы систему вообще без изображения.
     public static func toggle(_ input: PolicyInput) -> ManualOverride {
         guard input.hasAnyExternal else { return .none }
-        return input.builtinEnabled ? .forceBuiltinOff : .forceBuiltinOn
+        return input.builtinEnabled
+            ? .forceBuiltinOff(anchor: input.externals.first?.identity)
+            : .forceBuiltinOn
     }
 }

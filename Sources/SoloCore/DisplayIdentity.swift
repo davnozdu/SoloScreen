@@ -16,6 +16,15 @@ public struct DisplayIdentity: Hashable, Codable, Sendable {
         self.serialNumber = serialNumber
     }
 
+    /// macOS подставляет виртуальную заглушку, когда физических экранов не
+    /// осталось: `vendor` = "unkn", `model` = "virt", имя пустое. Она не
+    /// встроенная, поэтому без такой проверки политика считала бы её обычным
+    /// внешним экраном и держала встроенный выключенным — ровно это и мешало
+    /// экрану вернуться после отключения очков вручную.
+    public var isPlaceholder: Bool {
+        vendorID == 0x756E_6B6E && modelID == 0x7669_7274   // "unkn" / "virt"
+    }
+
     /// Строковый ключ для хранения в UserDefaults.
     public var key: String {
         String(format: "%08x-%08x-%08x", vendorID, modelID, serialNumber)

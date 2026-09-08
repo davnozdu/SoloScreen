@@ -24,12 +24,16 @@ enum Log {
         return f
     }()
 
+    /// Журнал ведётся годами и без присмотра, поэтому его размер ограничен.
+    private static let sizeLimit = 512 * 1024
+
     static func state(_ message: String) {
         logger.notice("\(message, privacy: .public)")
         guard let fileURL else { return }
         let line = "[\(formatter.string(from: Date()))] \(message)\n"
         queue.async {
             guard let data = line.data(using: .utf8) else { return }
+            rotateIfNeeded(fileURL)
             if let handle = try? FileHandle(forWritingTo: fileURL) {
                 defer { try? handle.close() }
                 _ = try? handle.seekToEnd()
@@ -38,6 +42,20 @@ enum Log {
                 try? data.write(to: fileURL)
             }
         }
+    }
+
+    /// Половина журнала отбрасывается разом: посимвольное усечение на каждой
+    /// записи стоило бы дороже самой записи.
+    private static func rotateIfNeeded(_ url: URL) {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int,
+              size > sizeLimit else { return }
+        guard let contents = try? Data(contentsOf: url) else { return }
+        let tail = contents.suffix(sizeLimit / 2)
+        // Обрезаем до начала ближайшей строки, чтобы журнал не начинался с
+        // половины записи.
+        let newline = UInt8(ascii: "\n")
+        let trimmed = tail.firstIndex(of: newline).map { tail[tail.index(after: $0)...] } ?? tail
+        try? Data(trimmed).write(to: url)
     }
 
     /// Диагностика при завершении пишется синхронно: процесс может исчезнуть
