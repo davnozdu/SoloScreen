@@ -41,6 +41,11 @@ final class Coordinator {
     private var isApplying = false
     private var pendingRefresh: DispatchWorkItem?
     private var watchdog: Timer?
+    /// Экраны, пережившие сон вместе с компьютером: автоматика к ним не
+    /// применяется, пока их не переподключат или пользователь не решит явно.
+    private var suppressed: Set<DisplayIdentity> = []
+    private var overrideBeforeSleep: ManualOverride = .none
+    private var wakeRestoreWork: DispatchWorkItem?
     /// Последняя залогированная сводка: сторожевой опрос не должен засорять лог
     /// повторами.
     private var lastLoggedSummary = ""
@@ -62,6 +67,7 @@ final class Coordinator {
         ) { _ in Coordinator.shared.scheduleRefresh() }
 
         startWatchdog()
+        startSleepObservers()
         recoverIfStranded()
         refresh()
     }
@@ -132,6 +138,58 @@ final class Coordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
+    // MARK: Сон и пробуждение
+
+    private func startSleepObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.willSleepNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+            self?.prepareForSleep()
+        }
+        center.addObserver(forName: NSWorkspace.didWakeNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+            self?.handleWake()
+        }
+    }
+
+    /// Перед сном встроенный экран возвращается: если внешний после
+    /// пробуждения не оживёт, изображение всё равно будет.
+    private func prepareForSleep() {
+        wakeRestoreWork?.cancel()
+        overrideBeforeSleep = state.override
+        state.override = .none
+        Log.state("сон: возвращаю встроенный экран")
+        if let builtinID = resolveBuiltinID(), !DisplayKit.builtinIsOnline() {
+            DisplayKit.setEnabled(builtinID, true)
+        }
+    }
+
+    private func handleWake() {
+        // Конфигурация экранов после пробуждения устаканивается не сразу.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            let externals = DisplayKit.onlineDisplays()
+                .filter { !$0.isBuiltin && !$0.identity.isPlaceholder }
+                .map(\.identity)
+            self.suppressed = Set(externals)
+            Log.state("пробуждение: автоматика подавлена для \(externals.count) экрана(ов)")
+            self.refresh()
+
+            guard WakeSettings.restoresSoloAfterWake else { return }
+            let delay = WakeSettings.restoreDelaySeconds
+            Log.state("пробуждение: вернусь в прежний режим через \(delay) с")
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.suppressed.removeAll()
+                self.state.override = self.overrideBeforeSleep
+                Log.state("пробуждение: восстанавливаю прежний режим")
+                self.refresh()
+            }
+            self.wakeRestoreWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delay), execute: work)
+        }
+    }
+
     func refresh() {
         let displays = DisplayKit.onlineDisplays()
         if let builtin = displays.first(where: { $0.isBuiltin }) {
@@ -139,10 +197,15 @@ final class Coordinator {
         }
 
         let builtinEnabled = displays.contains { $0.isBuiltin }
+        // Подавление снимается, когда экран переподключили.
+        let present = Set(displays.map(\.identity))
+        suppressed.formIntersection(present)
+
         let input = PolicyInput(displays: displays,
                                 builtinEnabled: builtinEnabled,
                                 trusted: trustedDevices.all,
-                                override: state.override)
+                                override: state.override,
+                                suppressed: suppressed)
         let decision = Policy.decide(input)
 
         let summary = "экранов=\(displays.count) встроенный=\(builtinEnabled) "
@@ -283,6 +346,7 @@ final class Coordinator {
 
     /// Явное переключение состояния встроенного экрана тумблером.
     func setBuiltinEnabled(_ enabled: Bool) {
+        clearSuppression()
         state.override = Policy.override(settingBuiltinEnabled: enabled, currentInput())
         refresh()
     }
@@ -291,10 +355,19 @@ final class Coordinator {
         PolicyInput(displays: state.displays,
                     builtinEnabled: state.builtinEnabled,
                     trusted: trustedDevices.all,
-                    override: state.override)
+                    override: state.override,
+                    suppressed: suppressed)
+    }
+
+    /// Явное действие пользователя означает, что экран живой: подавление
+    /// после сна больше не нужно.
+    private func clearSuppression() {
+        wakeRestoreWork?.cancel()
+        suppressed.removeAll()
     }
 
     func toggleBuiltin() {
+        clearSuppression()
         state.override = Policy.toggle(currentInput())
         refresh()
     }
@@ -304,6 +377,7 @@ final class Coordinator {
 
     func setTrusted(_ trusted: Bool, for identity: DisplayIdentity) {
         trustedDevices.setTrusted(trusted, for: identity)
+        clearSuppression()
         // Явное решение пользователя отменяет прежнее ручное переопределение.
         state.override = .none
         refresh()

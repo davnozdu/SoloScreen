@@ -158,6 +158,28 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(recorder.hint == nil ? .secondary : .primary)
 
+                Divider()
+
+                Toggle("После пробуждения возвращаться в режим внешнего экрана",
+                       isOn: model.restoreAfterWakeBinding)
+                if model.restoreAfterWakeBinding.wrappedValue {
+                    Stepper(value: model.wakeDelayBinding, in: model.wakeDelayRange) {
+                        Text("Через \(model.wakeDelayBinding.wrappedValue) с после пробуждения")
+                    }
+                    Text("Если очки после сна не оживут, за это время можно успеть нажать "
+                         + "\(model.hotKeyLabel) и вернуть экран ноутбука.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Экран ноутбука после пробуждения остаётся включённым. "
+                         + "Чтобы вернуться к выводу только на очки, нажмите \(model.hotKeyLabel) "
+                         + "или переткните кабель.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
                 Toggle("Запускать при входе в систему", isOn: model.loginItemBinding)
             }
             .padding(.vertical, 4)

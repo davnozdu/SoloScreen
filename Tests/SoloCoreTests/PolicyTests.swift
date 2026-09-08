@@ -1,18 +1,18 @@
 import Testing
 @testable import SoloCore
 
-private let glasses = DisplayIdentity(vendorID: 0x0510, modelID: 0x1001, serialNumber: 0x1)
-private let projector = DisplayIdentity(vendorID: 0x09d1, modelID: 0x8002, serialNumber: 0x47c)
-private let builtinID = DisplayIdentity(vendorID: 0x0610, modelID: 0xa051, serialNumber: 0xfd626d62)
+let glasses = DisplayIdentity(vendorID: 0x0510, modelID: 0x1001, serialNumber: 0x1)
+let projector = DisplayIdentity(vendorID: 0x09d1, modelID: 0x8002, serialNumber: 0x47c)
+let builtinID = DisplayIdentity(vendorID: 0x0610, modelID: 0xa051, serialNumber: 0xfd626d62)
 /// Заглушка, которую macOS подставляет, когда физических экранов не осталось.
-private let placeholder = DisplayIdentity(vendorID: 0x756E_6B6E, modelID: 0x7669_7274, serialNumber: 0)
+let placeholder = DisplayIdentity(vendorID: 0x756E_6B6E, modelID: 0x7669_7274, serialNumber: 0)
 
-private func snapshot(_ identity: DisplayIdentity, builtin: Bool = false, id: UInt32 = 2) -> DisplaySnapshot {
+func snapshot(_ identity: DisplayIdentity, builtin: Bool = false, id: UInt32 = 2) -> DisplaySnapshot {
     DisplaySnapshot(displayID: id, identity: identity, name: "test", isBuiltin: builtin)
 }
-private let builtinDisplay = snapshot(builtinID, builtin: true, id: 1)
+let builtinDisplay = snapshot(builtinID, builtin: true, id: 1)
 
-private func input(_ displays: [DisplaySnapshot],
+func input(_ displays: [DisplaySnapshot],
                    builtinEnabled: Bool = true,
                    trusted: Set<DisplayIdentity> = [glasses],
                    override: ManualOverride = .none) -> PolicyInput {
@@ -156,5 +156,44 @@ struct ManualOverrideTests {
     @Test("Хоткей не гасит последний экран")
     func хоткейБезопасен() {
         #expect(Policy.toggle(input([builtinDisplay], builtinEnabled: true)) == .none)
+    }
+}
+
+@Suite("Поведение вокруг сна")
+struct SleepPolicyTests {
+
+    /// После пробуждения панель очков может не ожить, хотя система показывает
+    /// дисплей активным. Автоматика для такого экрана подавляется, иначе
+    /// пользователь остаётся без изображения вовсе.
+    @Test("Подавленное устройство не гасит встроенный экран")
+    func подавленноеНеГасит() {
+        let i = PolicyInput(displays: [builtinDisplay, snapshot(glasses)],
+                            builtinEnabled: true,
+                            trusted: [glasses],
+                            override: .none,
+                            suppressed: [glasses])
+        #expect(!i.hasTrustedExternal)
+        #expect(Policy.decide(i).action == .leaveAsIs)
+    }
+
+    @Test("Без подавления то же устройство гасит встроенный")
+    func безПодавленияГасит() {
+        let i = PolicyInput(displays: [builtinDisplay, snapshot(glasses)],
+                            builtinEnabled: true,
+                            trusted: [glasses],
+                            override: .none,
+                            suppressed: [])
+        #expect(Policy.decide(i).action == .disable)
+    }
+
+    @Test("Подавление не мешает ручному режиму")
+    func ручнойРежимСильнее() {
+        // Явное нажатие горячей клавиши — сигнал, что экран живой.
+        let i = PolicyInput(displays: [builtinDisplay, snapshot(glasses)],
+                            builtinEnabled: true,
+                            trusted: [glasses],
+                            override: .forceBuiltinOff(anchor: glasses),
+                            suppressed: [glasses])
+        #expect(Policy.decide(i).action == .disable)
     }
 }

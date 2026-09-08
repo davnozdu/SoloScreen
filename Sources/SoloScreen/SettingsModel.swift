@@ -171,6 +171,30 @@ final class SettingsModel: ObservableObject {
         objectWillChange.send()
     }
 
+    // MARK: Поведение после пробуждения
+
+    var restoreAfterWakeBinding: Binding<Bool> {
+        Binding(
+            get: { WakeSettings.restoresSoloAfterWake },
+            set: { [weak self] value in
+                WakeSettings.restoresSoloAfterWake = value
+                self?.objectWillChange.send()
+            }
+        )
+    }
+
+    var wakeDelayBinding: Binding<Int> {
+        Binding(
+            get: { WakeSettings.restoreDelaySeconds },
+            set: { [weak self] value in
+                WakeSettings.restoreDelaySeconds = value
+                self?.objectWillChange.send()
+            }
+        )
+    }
+
+    var wakeDelayRange: ClosedRange<Int> { WakeSettings.delayRange }
+
     var loginItemBinding: Binding<Bool> {
         Binding(
             get: { LoginItemService.isEnabled },

@@ -33,15 +33,24 @@ public struct PolicyInput: Sendable {
     /// Белый список: для этих устройств встроенный экран гасится.
     public let trusted: Set<DisplayIdentity>
     public let override: ManualOverride
+    /// Устройства, для которых автоматика временно не работает.
+    ///
+    /// Так помечаются экраны, пережившие сон вместе с компьютером: после
+    /// пробуждения панель AR-очков может не ожить, а система всё равно
+    /// показывает дисплей активным. Гасить из-за этого встроенный экран нельзя —
+    /// пользователь остался бы вовсе без изображения.
+    public let suppressed: Set<DisplayIdentity>
 
     public init(displays: [DisplaySnapshot],
                 builtinEnabled: Bool,
                 trusted: Set<DisplayIdentity>,
-                override: ManualOverride) {
+                override: ManualOverride,
+                suppressed: Set<DisplayIdentity> = []) {
         self.displays = displays
         self.builtinEnabled = builtinEnabled
         self.trusted = trusted
         self.override = override
+        self.suppressed = suppressed
     }
 
     /// Заглушки системы внешними экранами не считаются.
@@ -49,7 +58,9 @@ public struct PolicyInput: Sendable {
         displays.filter { !$0.isBuiltin && !$0.identity.isPlaceholder }
     }
     public var hasAnyExternal: Bool { !externals.isEmpty }
-    public var hasTrustedExternal: Bool { externals.contains { trusted.contains($0.identity) } }
+    public var hasTrustedExternal: Bool {
+        externals.contains { trusted.contains($0.identity) && !suppressed.contains($0.identity) }
+    }
 }
 
 public struct PolicyDecision: Sendable, Equatable {
