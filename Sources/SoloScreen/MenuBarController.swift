@@ -8,8 +8,10 @@ final class MenuBarController: NSObject {
     private let menu = NSMenu()
     private let brightnessSlider = NSSlider()
     private let brightnessLabel = NSTextField(labelWithString: "")
-    private let weightSlider = NSSlider()
-    private let weightLabel = NSTextField(labelWithString: "")
+    private let whitePointSlider = NSSlider()
+    private let whitePointLabel = NSTextField(labelWithString: "")
+    private let blueSlider = NSSlider()
+    private let blueLabel = NSTextField(labelWithString: "")
 
     var onOpenSettings: (() -> Void)?
     /// Решение по незнакомому экрану: доверять или больше не спрашивать.
@@ -34,8 +36,10 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
         menu.addItem(brightnessHeader)
         menu.addItem(brightnessItem)
-        menu.addItem(weightHeader)
-        menu.addItem(weightItem)
+        menu.addItem(whitePointHeader)
+        menu.addItem(whitePointItem)
+        menu.addItem(blueHeader)
+        menu.addItem(blueItem)
         menu.addItem(.separator())
         menu.addItem(profileSubmenuItem)
         menu.addItem(.separator())
@@ -109,35 +113,57 @@ final class MenuBarController: NSObject {
         return item
     }()
 
-    private lazy var weightHeader: NSMenuItem = {
-        let item = NSMenuItem(title: "Толщина текста", action: nil, keyEquivalent: "")
+    private lazy var whitePointHeader: NSMenuItem = {
+        let item = NSMenuItem(title: "Точка белого", action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
     }()
 
-    private lazy var weightItem: NSMenuItem = {
+    private lazy var whitePointItem: NSMenuItem = {
+        sliderItem(whitePointSlider, label: whitePointLabel,
+                   min: WhitePoint.warmestKelvin, max: WhitePoint.neutralKelvin,
+                   value: WhitePoint.neutralKelvin, action: #selector(whitePointChanged),
+                   labelWidth: 56)
+    }()
+
+    private lazy var blueHeader: NSMenuItem = {
+        let item = NSMenuItem(title: "Меньше голубого", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }()
+
+    private lazy var blueItem: NSMenuItem = {
+        sliderItem(blueSlider, label: blueLabel, min: 0, max: 1, value: 0,
+                   action: #selector(blueChanged), labelWidth: 46)
+    }()
+
+    /// Ползунки в меню собираются одинаково: разными остаются только границы,
+    /// подпись и действие.
+    private func sliderItem(_ slider: NSSlider, label: NSTextField,
+                            min: Double, max: Double, value: Double,
+                            action: Selector, labelWidth: CGFloat) -> NSMenuItem {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
 
-        weightSlider.frame = NSRect(x: 20, y: 4, width: 160, height: 20)
-        weightSlider.minValue = -1
-        weightSlider.maxValue = 1
-        weightSlider.doubleValue = 0
-        weightSlider.target = self
-        weightSlider.action = #selector(weightChanged)
-        weightSlider.isContinuous = true
+        slider.frame = NSRect(x: 20, y: 4, width: 240 - 60 - labelWidth, height: 20)
+        slider.minValue = min
+        slider.maxValue = max
+        slider.doubleValue = value
+        slider.target = self
+        slider.action = action
+        slider.isContinuous = true
 
-        weightLabel.frame = NSRect(x: 186, y: 5, width: 46, height: 18)
-        weightLabel.alignment = .right
-        weightLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        weightLabel.textColor = .secondaryLabelColor
+        label.frame = NSRect(x: 236 - labelWidth, y: 5, width: labelWidth, height: 18)
+        label.alignment = .right
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .secondaryLabelColor
 
-        container.addSubview(weightSlider)
-        container.addSubview(weightLabel)
+        container.addSubview(slider)
+        container.addSubview(label)
 
         let item = NSMenuItem()
         item.view = container
         return item
-    }()
+    }
 
     /// Профили активного внешнего экрана: то же, что делает горячая клавиша,
     /// но с возможностью выбрать конкретный.
@@ -176,9 +202,13 @@ final class MenuBarController: NSObject {
             ? "Яркость: \(coordinator.brightnessTarget?.name ?? "")"
             : "Яркость внешнего экрана"
 
-        weightSlider.isEnabled = hasTarget
-        weightSlider.doubleValue = state.weight.value
-        weightLabel.stringValue = hasTarget ? weightText(state.weight) : "—"
+        whitePointSlider.isEnabled = hasTarget
+        whitePointSlider.doubleValue = state.whitePoint.kelvin
+        whitePointLabel.stringValue = hasTarget ? state.whitePoint.label : "—"
+
+        blueSlider.isEnabled = hasTarget
+        blueSlider.doubleValue = state.blueReduction.value
+        blueLabel.stringValue = hasTarget ? "\(state.blueReduction.percent)%" : "—"
 
         rebuildProfileSubmenu()
         rebuildTrustedSubmenu(state)
@@ -304,13 +334,12 @@ final class MenuBarController: NSObject {
         coordinator.setBrightness(BrightnessLevel(brightnessSlider.doubleValue))
     }
 
-    /// Знак важнее числа: «+30 %» и «−30 %» — противоположные направления.
-    private func weightText(_ weight: TextWeight) -> String {
-        weight.value == 0 ? "0" : String(format: "%+d%%", weight.percent)
+    @objc private func whitePointChanged() {
+        coordinator.setWhitePoint(WhitePoint(whitePointSlider.doubleValue))
     }
 
-    @objc private func weightChanged() {
-        coordinator.setTextWeight(TextWeight(weightSlider.doubleValue))
+    @objc private func blueChanged() {
+        coordinator.setBlueReduction(BlueReduction(blueSlider.doubleValue))
     }
 
     @objc private func selectProfile(_ sender: NSMenuItem) {

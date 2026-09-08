@@ -137,11 +137,23 @@ final class SettingsModel: ObservableObject {
         )
     }
 
-    func weightBinding(for display: DisplaySnapshot) -> Binding<Double> {
+    func whitePointBinding(for display: DisplaySnapshot) -> Binding<Double> {
         Binding(
-            get: { [weak self] in self?.activeProfile(for: display)?.weight ?? 0 },
+            get: { [weak self] in
+                self?.activeProfile(for: display)?.kelvin ?? WhitePoint.neutralKelvin
+            },
             set: { [weak self] value in
-                self?.coordinator.setTextWeight(TextWeight(value), for: display)
+                self?.coordinator.setWhitePoint(WhitePoint(value), for: display)
+                self?.objectWillChange.send()
+            }
+        )
+    }
+
+    func blueBinding(for display: DisplaySnapshot) -> Binding<Double> {
+        Binding(
+            get: { [weak self] in self?.activeProfile(for: display)?.blue ?? 0 },
+            set: { [weak self] value in
+                self?.coordinator.setBlueReduction(BlueReduction(value), for: display)
                 self?.objectWillChange.send()
             }
         )

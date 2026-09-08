@@ -10,23 +10,28 @@ public struct DisplayProfile: Equatable, Codable, Identifiable, Sendable {
     /// Режим экрана; `nil` — оставить тот, что выбрала система.
     public var mode: PreferredMode?
     public var brightness: Double
-    /// Толщина текста: от −1 (тоньше) до +1 (толще).
-    public var weight: Double
+    /// Точка белого в кельвинах.
+    public var kelvin: Double
+    /// Ослабление синего канала: от 0 до 1.
+    public var blue: Double
 
     public init(id: UUID = UUID(),
                 name: String,
                 mode: PreferredMode? = nil,
                 brightness: Double = BrightnessLevel.maximum,
-                weight: Double = 0) {
+                kelvin: Double = WhitePoint.neutralKelvin,
+                blue: Double = 0) {
         self.id = id
         self.name = name
         self.mode = mode
         self.brightness = brightness
-        self.weight = weight
+        self.kelvin = kelvin
+        self.blue = blue
     }
 
     public var brightnessLevel: BrightnessLevel { BrightnessLevel(brightness) }
-    public var textWeight: TextWeight { TextWeight(weight) }
+    public var whitePoint: WhitePoint { WhitePoint(kelvin) }
+    public var blueReduction: BlueReduction { BlueReduction(blue) }
 
     /// Чтение прощает отсутствие полей: профили хранятся одним куском JSON, и
     /// строгий разбор означал бы, что новое поле стирает все настройки разом.
@@ -37,7 +42,9 @@ public struct DisplayProfile: Equatable, Codable, Identifiable, Sendable {
         mode = try container.decodeIfPresent(PreferredMode.self, forKey: .mode)
         brightness = try container.decodeIfPresent(Double.self, forKey: .brightness)
             ?? BrightnessLevel.maximum
-        weight = try container.decodeIfPresent(Double.self, forKey: .weight) ?? 0
+        kelvin = try container.decodeIfPresent(Double.self, forKey: .kelvin)
+            ?? WhitePoint.neutralKelvin
+        blue = try container.decodeIfPresent(Double.self, forKey: .blue) ?? 0
     }
 }
 
@@ -149,7 +156,8 @@ public final class DisplayProfiles {
     private func normalized(_ profile: DisplayProfile) -> DisplayProfile {
         var result = profile
         result.brightness = BrightnessLevel(profile.brightness).value
-        result.weight = TextWeight(profile.weight).value
+        result.kelvin = WhitePoint(profile.kelvin).kelvin
+        result.blue = BlueReduction(profile.blue).value
         let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
         result.name = trimmed.isEmpty ? "Профиль" : trimmed
         return result

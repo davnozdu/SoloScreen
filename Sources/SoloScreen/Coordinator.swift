@@ -14,7 +14,8 @@ final class Coordinator {
         var displays: [DisplaySnapshot] = []
         var builtinEnabled: Bool = true
         var brightness: BrightnessLevel = .default
-        var weight: TextWeight = .neutral
+        var whitePoint: WhitePoint = .neutral
+        var blueReduction: BlueReduction = .none
         var override: ManualOverride = .none
 
         /// Заглушки системы из списка исключены — показывать их пользователю
@@ -287,7 +288,8 @@ final class Coordinator {
         }
         if let target = brightnessTarget, let profile = profiles.active(for: target.identity) {
             state.brightness = profile.brightnessLevel
-            state.weight = profile.textWeight
+            state.whitePoint = profile.whitePoint
+            state.blueReduction = profile.blueReduction
         }
     }
 
@@ -315,7 +317,10 @@ final class Coordinator {
     }
 
     private func applyTone(of profile: DisplayProfile, to display: DisplaySnapshot) {
-        brightness.apply(profile.brightnessLevel, weight: profile.textWeight, to: display.displayID)
+        brightness.apply(profile.brightnessLevel,
+                         whitePoint: profile.whitePoint,
+                         blueReduction: profile.blueReduction,
+                         to: display.displayID)
     }
 
     /// Переключение профиля: настройки применяются сразу, без подтверждения.
@@ -434,26 +439,43 @@ final class Coordinator {
         setBrightness(level, for: target)
     }
 
-    func setTextWeight(_ weight: TextWeight) {
+    func setWhitePoint(_ whitePoint: WhitePoint) {
         guard let target = brightnessTarget else { return }
-        setTextWeight(weight, for: target)
+        setWhitePoint(whitePoint, for: target)
+    }
+
+    func setBlueReduction(_ blue: BlueReduction) {
+        guard let target = brightnessTarget else { return }
+        setBlueReduction(blue, for: target)
     }
 
     func setBrightness(_ level: BrightnessLevel, for display: DisplaySnapshot) {
         var profile = ensureProfile(for: display)
         profile.brightness = level.value
         profiles.update(profile, for: display.identity)
-        brightness.apply(level, weight: profile.textWeight, to: display.displayID)
+        brightness.apply(level,
+                         whitePoint: profile.whitePoint,
+                         blueReduction: profile.blueReduction,
+                         to: display.displayID)
         if display.identity == brightnessTarget?.identity { state.brightness = level }
         notify()
     }
 
-    func setTextWeight(_ weight: TextWeight, for display: DisplaySnapshot) {
+    func setWhitePoint(_ whitePoint: WhitePoint, for display: DisplaySnapshot) {
         var profile = ensureProfile(for: display)
-        profile.weight = weight.value
+        profile.kelvin = whitePoint.kelvin
         profiles.update(profile, for: display.identity)
-        brightness.apply(profile.brightnessLevel, weight: weight, to: display.displayID)
-        if display.identity == brightnessTarget?.identity { state.weight = weight }
+        applyTone(of: profile, to: display)
+        if display.identity == brightnessTarget?.identity { state.whitePoint = whitePoint }
+        notify()
+    }
+
+    func setBlueReduction(_ blue: BlueReduction, for display: DisplaySnapshot) {
+        var profile = ensureProfile(for: display)
+        profile.blue = blue.value
+        profiles.update(profile, for: display.identity)
+        applyTone(of: profile, to: display)
+        if display.identity == brightnessTarget?.identity { state.blueReduction = blue }
         notify()
     }
 

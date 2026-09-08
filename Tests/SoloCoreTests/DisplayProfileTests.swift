@@ -31,7 +31,7 @@ struct DisplayProfileTests {
         let saved = store.add(DisplayProfile(name: "Чтение",
                                              mode: PreferredMode(width: 960, height: 540,
                                                                  refreshHz: 120, isHiDPI: true),
-                                             brightness: 0.8, weight: 0.5), for: очки)
+                                             brightness: 0.8, kelvin: 3000, blue: 0.4), for: очки)
         #expect(store.active(for: очки)?.id == saved.id)
 
         let другой = DisplayProfiles(defaults: defaults)
@@ -39,7 +39,8 @@ struct DisplayProfileTests {
         #expect(прочитанный?.name == "Чтение")
         #expect(прочитанный?.mode?.isHiDPI == true)
         #expect(прочитанный?.brightness == 0.8)
-        #expect(прочитанный?.weight == 0.5)
+        #expect(прочитанный?.kelvin == 3000)
+        #expect(прочитанный?.blue == 0.4)
     }
 
     @Test("Профили разных устройств не смешиваются")
@@ -86,10 +87,10 @@ struct DisplayProfileTests {
     func правкаПрофиля() {
         let store = свежееХранилище()
         var profile = store.add(DisplayProfile(name: "Чтение"), for: очки)
-        profile.weight = 0.9
+        profile.blue = 0.9
         profile.name = "Чтение днём"
         store.update(profile, for: очки)
-        #expect(store.profiles(for: очки).first?.weight == 0.9)
+        #expect(store.profiles(for: очки).first?.blue == 0.9)
         #expect(store.profiles(for: очки).first?.name == "Чтение днём")
     }
 
@@ -120,12 +121,14 @@ struct DisplayProfileTests {
         #expect(store.next(for: очки)?.id == a.id)
     }
 
-    @Test("Яркость и толщина профиля обрезаются по допустимому диапазону")
+    @Test("Яркость и цвет профиля обрезаются по допустимому диапазону")
     func значенияОбрезаются() {
         let store = свежееХранилище()
-        let saved = store.add(DisplayProfile(name: "Кривой", brightness: 5, weight: -3), for: очки)
+        let saved = store.add(DisplayProfile(name: "Кривой", brightness: 5, kelvin: 99_000, blue: -3),
+                              for: очки)
         #expect(saved.brightnessLevel.value == BrightnessLevel.maximum)
-        #expect(saved.textWeight.value == -1)
+        #expect(saved.whitePoint.kelvin == WhitePoint.neutralKelvin)
+        #expect(saved.blueReduction.value == 0)
     }
 
     @Test("Профиль без новых полей читается, а не стирает всё хранилище")
@@ -140,7 +143,8 @@ struct DisplayProfileTests {
         let profile = try #require(decoded["очки"]?.first)
         #expect(profile.name == "Старый")
         #expect(profile.brightness == 0.7)
-        #expect(profile.weight == 0)
+        #expect(profile.kelvin == WhitePoint.neutralKelvin)
+        #expect(profile.blue == 0)
         #expect(profile.mode == nil)
     }
 }

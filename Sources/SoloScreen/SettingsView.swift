@@ -209,7 +209,8 @@ struct SettingsView: View {
     @ViewBuilder
     private func toneSliders(for display: DisplaySnapshot) -> some View {
         let brightness = model.brightnessBinding(for: display)
-        let weight = model.weightBinding(for: display)
+        let whitePoint = model.whitePointBinding(for: display)
+        let blue = model.blueBinding(for: display)
 
         HStack {
             Text("Яркость")
@@ -221,33 +222,40 @@ struct SettingsView: View {
         }
 
         HStack {
-            Text("Толщина текста")
-            Slider(value: weight, in: -1...1) {
+            Text("Точка белого")
+            // Шкала перевёрнута: слева теплее, как в системных настройках.
+            Slider(value: whitePoint, in: WhitePoint.warmestKelvin...WhitePoint.neutralKelvin) {
                 EmptyView()
             } minimumValueLabel: {
-                Text("тоньше").font(.caption2).foregroundStyle(.secondary)
+                Text("теплее").font(.caption2).foregroundStyle(.secondary)
             } maximumValueLabel: {
-                Text("толще").font(.caption2).foregroundStyle(.secondary)
+                Text("нейтрально").font(.caption2).foregroundStyle(.secondary)
             }
-            Text(weightText(weight.wrappedValue))
+            Text(WhitePoint(whitePoint.wrappedValue).label)
+                .monospacedDigit()
+                .frame(width: 56, alignment: .trailing)
+                .foregroundStyle(.secondary)
+        }
+
+        HStack {
+            Text("Меньше голубого")
+            Slider(value: blue, in: 0...1)
+            Text("\(BlueReduction(blue.wrappedValue).percent) %")
                 .monospacedDigit()
                 .frame(width: 46, alignment: .trailing)
                 .foregroundStyle(.secondary)
         }
 
-        Text(weightHint)
+        Text(colorHint)
             .font(.caption)
             .foregroundStyle(.secondary)
     }
 
-    private func weightText(_ value: Double) -> String {
-        value == 0 ? "0" : String(format: "%+d%%", TextWeight(value).percent)
-    }
-
-    private var weightHint: String {
-        "Сдвигает полутона гаммой: вправо — серая кайма сглаживания вокруг светлых "
-            + "букв ярче, штрихи выглядят толще; влево — наоборот, тоньше и жёстче. "
-            + "Действует на весь экран, включая видео."
+    private var colorHint: String {
+        "Точка белого ведёт цвет по естественной траектории нагрева, как ночной режим "
+            + "системы, но только на этом экране. Ослабление голубого убирает синеву, "
+            + "не трогая остального. У очков панель у самого лица, и синий бьёт в упор — "
+            + "на резкость это не влияет, но глазам легче."
     }
 
     // MARK: Управление
