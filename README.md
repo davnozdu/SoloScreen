@@ -154,10 +154,13 @@ AR-очков отсутствует.
 ## Сборка из исходников
 
 ```sh
-swift test
+./Scripts/test.sh
 VERSION=0.1.0 ./Scripts/build-app.sh
 VERSION=0.1.0 ./Scripts/make-dmg.sh
 ```
+
+`Scripts/test.sh` нужен потому, что без полного Xcode модули Testing и XCTest
+лежат в Command Line Tools и не подхватываются сами.
 
 Готовые DMG собираются на GitHub Actions при публикации тега `v*`.
 
