@@ -14,6 +14,7 @@ final class Coordinator {
         var displays: [DisplaySnapshot] = []
         var builtinEnabled: Bool = true
         var brightness: BrightnessLevel = .default
+        var weight: TextWeight = .neutral
         var override: ManualOverride = .none
 
         /// Заглушки системы из списка исключены — показывать их пользователю
@@ -29,9 +30,12 @@ final class Coordinator {
     var onDisplaysScanned: (([DisplaySnapshot], Set<DisplayIdentity>) -> Void)?
 
     let trustedDevices = TrustedDevices(storage: UserDefaultsTrustedDeviceStorage())
-    let preferredModes = PreferredModes()
-    /// Режим выставляется один раз на подключение, а не при каждом опросе.
-    private var modeAppliedTo: Set<DisplayIdentity> = []
+    let profiles = DisplayProfiles()
+    /// Прежнее хранилище режимов: нужно только чтобы перенести выбор,
+    /// сделанный до появления профилей.
+    private let legacyModes = PreferredModes()
+    /// Профиль применяется один раз на подключение, а не при каждом опросе.
+    private var profileAppliedTo: Set<DisplayIdentity> = []
     private let brightness = BrightnessService()
     private let defaults = UserDefaults.standard
     private let lastBuiltinKey = "LastBuiltinDisplayID"
@@ -220,8 +224,7 @@ final class Coordinator {
 
         onDisplaysScanned?(displays, trustedDevices.all)
         apply(decision.action)
-        syncPreferredModes(for: displays)
-        syncBrightness(for: displays)
+        syncProfiles(for: displays)
         notify()
     }
 
@@ -251,52 +254,161 @@ final class Coordinator {
         return (defaults.object(forKey: lastBuiltinKey) as? NSNumber)?.uint32Value
     }
 
-    // MARK: Режимы экрана
+    // MARK: Профили устройства
 
-    /// Выставляет выбранный пользователем режим при подключении устройства.
+    /// Активный профиль устройства. При первом появлении экрана профиль
+    /// создаётся из прежних настроек, чтобы выбор, сделанный до появления
+    /// профилей, не пропал.
+    @discardableResult
+    func ensureProfile(for display: DisplaySnapshot) -> DisplayProfile {
+        if let active = profiles.active(for: display.identity) { return active }
+        let seeded = DisplayProfile(name: "Обычный", mode: legacyModes.mode(for: display.identity))
+        Log.state("создан профиль «\(seeded.name)» для «\(display.name)»")
+        return profiles.add(seeded, for: display.identity)
+    }
+
+    func activeProfile(for display: DisplaySnapshot) -> DisplayProfile? {
+        profiles.active(for: display.identity)
+    }
+
+    /// Выставляет настройки профиля при подключении устройства.
     ///
     /// macOS для AR-очков нередко выбирает 60 Гц, хотя устройство умеет больше,
-    /// а высокие частоты прячет из «Настроек».
-    private func syncPreferredModes(for displays: [DisplaySnapshot]) {
-        let connected = Set(displays.filter { !$0.isBuiltin }.map(\.identity))
-        modeAppliedTo.formIntersection(connected)
+    /// а режимы с удвоенной плотностью точек прячет целиком.
+    private func syncProfiles(for displays: [DisplaySnapshot]) {
+        let externals = displays.filter { !$0.isBuiltin && !$0.identity.isPlaceholder }
+        profileAppliedTo.formIntersection(Set(externals.map(\.identity)))
 
-        for display in displays where !display.isBuiltin {
-            guard !modeAppliedTo.contains(display.identity),
-                  let preferred = preferredModes.mode(for: display.identity) else { continue }
-            modeAppliedTo.insert(display.identity)
-
-            let current = DisplayKit.currentMode(for: display.displayID)
-            if let current, current.width == preferred.width, current.height == preferred.height,
-               current.refreshHz == preferred.refreshHz {
-                continue
-            }
-            guard let target = ModeSelector.best(for: preferred,
-                                                 from: DisplayKit.availableModes(for: display.displayID)) else {
-                Log.state("режим \(preferred.encoded) недоступен для «\(display.name)»")
-                continue
-            }
-            let ok = DisplayKit.apply(target, to: display.displayID)
-            Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц "
-                      + "для «\(display.name)» -> \(ok)")
+        for display in externals where !profileAppliedTo.contains(display.identity) {
+            profileAppliedTo.insert(display.identity)
+            let profile = ensureProfile(for: display)
+            applyMode(of: profile, to: display)
+            applyTone(of: profile, to: display)
+        }
+        if let target = brightnessTarget, let profile = profiles.active(for: target.identity) {
+            state.brightness = profile.brightnessLevel
+            state.weight = profile.textWeight
         }
     }
 
-    /// Применяет режим немедленно, когда пользователь выбрал его в настройках.
-    func setPreferredMode(_ mode: PreferredMode?, for display: DisplaySnapshot) {
-        preferredModes.set(mode, for: display.identity)
-        modeAppliedTo.remove(display.identity)
-        guard let mode,
-              let target = ModeSelector.best(for: mode,
+    @discardableResult
+    private func applyMode(of profile: DisplayProfile, to display: DisplaySnapshot) -> DisplayModeSpec? {
+        guard let preferred = profile.mode else { return nil }
+        let current = DisplayKit.currentMode(for: display.displayID)
+        // Режим уже стоит нужный — трогать конфигурацию экранов незачем.
+        // Плотность точек сравнивается наравне с размером: 1920x1080 бывает и
+        // обычным, и удвоенным, и это разные режимы.
+        if let current, current.width == preferred.width, current.height == preferred.height,
+           current.refreshHz == preferred.refreshHz, current.isHiDPI == preferred.isHiDPI {
+            return nil
+        }
+        guard let target = ModeSelector.best(for: preferred,
                                              from: DisplayKit.availableModes(for: display.displayID)) else {
+            Log.state("режим \(preferred.encoded) недоступен для «\(display.name)»")
+            return nil
+        }
+        let ok = DisplayKit.apply(target, to: display.displayID)
+        Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц"
+                  + (target.isHiDPI ? " (удвоенная плотность)" : "")
+                  + " для «\(display.name)» -> \(ok)")
+        return ok ? current : nil
+    }
+
+    private func applyTone(of profile: DisplayProfile, to display: DisplaySnapshot) {
+        brightness.apply(profile.brightnessLevel, weight: profile.textWeight, to: display.displayID)
+    }
+
+    /// Переключение профиля: настройки применяются сразу, без подтверждения.
+    /// Режим в профиле человек уже видел, когда его выбирал.
+    func selectProfile(_ id: UUID, for display: DisplaySnapshot) {
+        profiles.setActive(id, for: display.identity)
+        guard let profile = profiles.active(for: display.identity) else { return }
+        applyMode(of: profile, to: display)
+        applyTone(of: profile, to: display)
+        Log.state("профиль «\(profile.name)» для «\(display.name)»")
+        refresh()
+    }
+
+    @discardableResult
+    func addProfile(named name: String, basedOn source: DisplayProfile?,
+                    for display: DisplaySnapshot) -> DisplayProfile {
+        var profile = source ?? DisplayProfile(name: name)
+        profile.id = UUID()
+        profile.name = name
+        let saved = profiles.add(profile, for: display.identity)
+        applyMode(of: saved, to: display)
+        applyTone(of: saved, to: display)
+        refresh()
+        return saved
+    }
+
+    func removeProfile(_ id: UUID, for display: DisplaySnapshot) {
+        profiles.remove(id, for: display.identity)
+        if let active = profiles.active(for: display.identity) {
+            applyMode(of: active, to: display)
+            applyTone(of: active, to: display)
+        }
+        refresh()
+    }
+
+    func renameProfile(_ id: UUID, to name: String, for display: DisplaySnapshot) {
+        guard var profile = profiles.profiles(for: display.identity).first(where: { $0.id == id }) else { return }
+        profile.name = name
+        profiles.update(profile, for: display.identity)
+        refresh()
+    }
+
+    /// Горячая клавиша: следующий профиль активного внешнего экрана по кругу.
+    func cycleProfile() {
+        guard let target = brightnessTarget,
+              let next = profiles.next(for: target.identity) else { return }
+        selectProfile(next.id, for: target)
+        onProfileCycled?(target, next)
+    }
+
+    /// Показать, на что переключились: горячую клавишу нажимают вслепую.
+    var onProfileCycled: ((DisplaySnapshot, DisplayProfile) -> Void)?
+
+    // MARK: Режим экрана
+
+    /// Применяет режим немедленно, когда пользователь выбрал его в настройках.
+    ///
+    /// Смена режима — то место, где приложение может незаметно оставить
+    /// человека без изображения: отличить «экран есть» от «экран чёрный»
+    /// программно нельзя. Поэтому после смены спрашиваем подтверждение и сами
+    /// возвращаем прежний режим, если ответа нет.
+    func setMode(_ mode: PreferredMode?, for display: DisplaySnapshot) {
+        var profile = ensureProfile(for: display)
+        let previousMode = profile.mode
+        let previousSpec = DisplayKit.currentMode(for: display.displayID)
+        profile.mode = mode
+        profiles.update(profile, for: display.identity)
+        profileAppliedTo.insert(display.identity)
+
+        guard let mode else { refresh(); return }
+        guard let target = ModeSelector.best(for: mode,
+                                             from: DisplayKit.availableModes(for: display.displayID)) else {
+            Log.state("режим \(mode.encoded) недоступен для «\(display.name)»")
             refresh()
             return
         }
-        modeAppliedTo.insert(display.identity)
         let ok = DisplayKit.apply(target, to: display.displayID)
-        Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц "
-                  + "для «\(display.name)» -> \(ok)")
+        Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц"
+                  + (target.isHiDPI ? " (удвоенная плотность)" : "")
+                  + " для «\(display.name)» -> \(ok)")
         refresh()
+        guard ok, let previousSpec, previousSpec != target else { return }
+
+        ModeConfirmation.ask(mode: target, displayName: display.name) { [weak self] keep in
+            guard let self, !keep else { return }
+            Log.state("режим не подтверждён — возвращаю \(previousSpec.resolutionLabel)")
+            DisplayKit.apply(previousSpec, to: display.displayID)
+            if var current = self.profiles.active(for: display.identity) {
+                current.mode = previousMode
+                self.profiles.update(current, for: display.identity)
+            }
+            self.refresh()
+        }
     }
 
     func availableModes(for display: DisplaySnapshot) -> [DisplayModeSpec] {
@@ -307,38 +419,41 @@ final class Coordinator {
         DisplayKit.currentMode(for: display.displayID)
     }
 
-    // MARK: Яркость
+    // MARK: Яркость и чёткость
 
-    /// Экран, к которому относится слайдер: доверенный внешний, иначе просто
+    /// Экран, к которому относятся ползунки: доверенный внешний, иначе просто
     /// первый внешний.
     var brightnessTarget: DisplaySnapshot? {
         let externals = state.externals
         return externals.first { trustedDevices.contains($0.identity) } ?? externals.first
     }
 
-    private var lastBrightnessTarget: DisplayIdentity?
-
-    private func syncBrightness(for displays: [DisplaySnapshot]) {
-        guard let target = brightnessTarget else {
-            if lastBrightnessTarget != nil {
-                brightness.restoreAll()
-                lastBrightnessTarget = nil
-                state.brightness = .default
-            }
-            return
-        }
-        // Каждое новое подключение начинается со 100%.
-        if lastBrightnessTarget != target.identity {
-            lastBrightnessTarget = target.identity
-            brightness.resetToFull(target.displayID)
-            state.brightness = .default
-        }
-    }
-
+    /// Ползунки в строке меню относятся к активному внешнему экрану.
     func setBrightness(_ level: BrightnessLevel) {
         guard let target = brightnessTarget else { return }
-        brightness.apply(level, to: target.displayID)
-        state.brightness = level
+        setBrightness(level, for: target)
+    }
+
+    func setTextWeight(_ weight: TextWeight) {
+        guard let target = brightnessTarget else { return }
+        setTextWeight(weight, for: target)
+    }
+
+    func setBrightness(_ level: BrightnessLevel, for display: DisplaySnapshot) {
+        var profile = ensureProfile(for: display)
+        profile.brightness = level.value
+        profiles.update(profile, for: display.identity)
+        brightness.apply(level, weight: profile.textWeight, to: display.displayID)
+        if display.identity == brightnessTarget?.identity { state.brightness = level }
+        notify()
+    }
+
+    func setTextWeight(_ weight: TextWeight, for display: DisplaySnapshot) {
+        var profile = ensureProfile(for: display)
+        profile.weight = weight.value
+        profiles.update(profile, for: display.identity)
+        brightness.apply(profile.brightnessLevel, weight: weight, to: display.displayID)
+        if display.identity == brightnessTarget?.identity { state.weight = weight }
         notify()
     }
 

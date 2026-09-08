@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var settingsModel: SettingsModel?
     private let hotKey = HotKeyManager()
+    private let profileHotKey = HotKeyManager(id: 2)
     private let notifier = NewDisplayNotifier()
     private var signalSources: [DispatchSourceSignal] = []
     private let signalQueue = DispatchQueue(label: "com.davnozdu.soloscreen.signals")
@@ -27,7 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.settingsModel?.reload()
         }
 
+        SettingsCleanup.run()
         hotKey.register(HotKeyManager.stored) { coordinator.toggleBuiltin() }
+        profileHotKey.register(HotKeyManager.storedProfile) { coordinator.cycleProfile() }
+        coordinator.onProfileCycled = { display, profile in
+            ProfileHUD.shared.show(profile: profile, on: display)
+        }
 
         notifier.onTrustRequest = { [weak self] identity in
             self?.notifier.markDecided(identity)
@@ -54,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Рубеж 2: возврат экрана при завершении приложения, в том числе по сигналу.
     func applicationWillTerminate(_ notification: Notification) {
         hotKey.unregister()
+        profileHotKey.unregister()
         Coordinator.shared.restoreBeforeExit()
     }
 
@@ -76,15 +83,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         let model = SettingsModel()
+        model.onProfileHotKeyChange = { [weak self] combo in
+            self?.profileHotKey.register(combo) { Coordinator.shared.cycleProfile() }
+        }
         model.onHotKeyChange = { [weak self] combo in
             self?.hotKey.register(combo) { Coordinator.shared.toggleBuiltin() }
         }
         // На время записи глобальная клавиша снимается, иначе Carbon перехватил
         // бы её раньше окна и переназначить сочетание на само себя не вышло бы.
         model.recorder.configure(
-            suspend: { [weak self] in self?.hotKey.unregister() },
+            suspend: { [weak self] in
+                self?.hotKey.unregister()
+                self?.profileHotKey.unregister()
+            },
             resume: { [weak self] in
                 self?.hotKey.register(HotKeyManager.stored) { Coordinator.shared.toggleBuiltin() }
+                self?.profileHotKey.register(HotKeyManager.storedProfile) { Coordinator.shared.cycleProfile() }
             }
         )
         settingsModel = model

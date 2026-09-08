@@ -8,6 +8,8 @@ final class MenuBarController: NSObject {
     private let menu = NSMenu()
     private let brightnessSlider = NSSlider()
     private let brightnessLabel = NSTextField(labelWithString: "")
+    private let weightSlider = NSSlider()
+    private let weightLabel = NSTextField(labelWithString: "")
 
     var onOpenSettings: (() -> Void)?
     /// Решение по незнакомому экрану: доверять или больше не спрашивать.
@@ -32,6 +34,10 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
         menu.addItem(brightnessHeader)
         menu.addItem(brightnessItem)
+        menu.addItem(weightHeader)
+        menu.addItem(weightItem)
+        menu.addItem(.separator())
+        menu.addItem(profileSubmenuItem)
         menu.addItem(.separator())
         menu.addItem(trustedSubmenuItem)
         menu.addItem(.separator())
@@ -103,6 +109,44 @@ final class MenuBarController: NSObject {
         return item
     }()
 
+    private lazy var weightHeader: NSMenuItem = {
+        let item = NSMenuItem(title: "Толщина текста", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }()
+
+    private lazy var weightItem: NSMenuItem = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+
+        weightSlider.frame = NSRect(x: 20, y: 4, width: 160, height: 20)
+        weightSlider.minValue = -1
+        weightSlider.maxValue = 1
+        weightSlider.doubleValue = 0
+        weightSlider.target = self
+        weightSlider.action = #selector(weightChanged)
+        weightSlider.isContinuous = true
+
+        weightLabel.frame = NSRect(x: 186, y: 5, width: 46, height: 18)
+        weightLabel.alignment = .right
+        weightLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        weightLabel.textColor = .secondaryLabelColor
+
+        container.addSubview(weightSlider)
+        container.addSubview(weightLabel)
+
+        let item = NSMenuItem()
+        item.view = container
+        return item
+    }()
+
+    /// Профили активного внешнего экрана: то же, что делает горячая клавиша,
+    /// но с возможностью выбрать конкретный.
+    private lazy var profileSubmenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Профиль экрана", action: nil, keyEquivalent: "")
+        item.submenu = NSMenu()
+        return item
+    }()
+
     private lazy var trustedSubmenuItem: NSMenuItem = {
         let item = NSMenuItem(title: "Гасить ноутбук для устройства", action: nil, keyEquivalent: "")
         item.submenu = NSMenu()
@@ -132,6 +176,11 @@ final class MenuBarController: NSObject {
             ? "Яркость: \(coordinator.brightnessTarget?.name ?? "")"
             : "Яркость внешнего экрана"
 
+        weightSlider.isEnabled = hasTarget
+        weightSlider.doubleValue = state.weight.value
+        weightLabel.stringValue = hasTarget ? weightText(state.weight) : "—"
+
+        rebuildProfileSubmenu()
         rebuildTrustedSubmenu(state)
         rebuildPrompt()
     }
@@ -191,6 +240,44 @@ final class MenuBarController: NSObject {
         return NSImage(systemSymbolName: name, accessibilityDescription: "SoloScreen")
     }
 
+    private func rebuildProfileSubmenu() {
+        let submenu = NSMenu()
+        defer { profileSubmenuItem.submenu = submenu }
+
+        guard let target = coordinator.brightnessTarget else {
+            let empty = NSMenuItem(title: "Внешних экранов нет", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+            profileSubmenuItem.title = "Профиль экрана"
+            return
+        }
+
+        let profiles = coordinator.profiles.profiles(for: target.identity)
+        let active = coordinator.activeProfile(for: target)
+        profileSubmenuItem.title = "Профиль: \(active?.name ?? "—")"
+
+        if profiles.isEmpty {
+            let empty = NSMenuItem(title: "Профилей нет", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        } else {
+            for profile in profiles {
+                let item = NSMenuItem(title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = profile.id == active?.id ? .on : .off
+                item.representedObject = profile.id.uuidString
+                submenu.addItem(item)
+            }
+        }
+
+        submenu.addItem(.separator())
+        let next = NSMenuItem(title: "Следующий  (\(HotKeyManager.storedProfile.label))",
+                              action: #selector(cycleProfile), keyEquivalent: "")
+        next.target = self
+        next.isEnabled = profiles.count > 1
+        submenu.addItem(next)
+    }
+
     private func rebuildTrustedSubmenu(_ state: Coordinator.State) {
         let submenu = NSMenu()
         if state.externals.isEmpty {
@@ -215,6 +302,28 @@ final class MenuBarController: NSObject {
 
     @objc private func brightnessChanged() {
         coordinator.setBrightness(BrightnessLevel(brightnessSlider.doubleValue))
+    }
+
+    /// Знак важнее числа: «+30 %» и «−30 %» — противоположные направления.
+    private func weightText(_ weight: TextWeight) -> String {
+        weight.value == 0 ? "0" : String(format: "%+d%%", weight.percent)
+    }
+
+    @objc private func weightChanged() {
+        coordinator.setTextWeight(TextWeight(weightSlider.doubleValue))
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let id = UUID(uuidString: raw),
+              let target = coordinator.brightnessTarget else { return }
+        coordinator.selectProfile(id, for: target)
+        refresh()
+    }
+
+    @objc private func cycleProfile() {
+        coordinator.cycleProfile()
+        refresh()
     }
 
     @objc private func toggleTrusted(_ sender: NSMenuItem) {

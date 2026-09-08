@@ -37,6 +37,9 @@ public struct KeyCombo: Equatable, Codable, Sendable {
     /// ⌃⌥⌘D
     public static let `default` = KeyCombo(keyCode: 2, modifiers: [.control, .option, .command])
 
+    /// ⌃⌥⌘P — переключение профиля экрана по кругу.
+    public static let defaultProfileSwitch = KeyCombo(keyCode: 35, modifiers: [.control, .option, .command])
+
     /// Обычная клавиша последней, как принято в подписях меню macOS.
     public var label: String { modifiers.label + KeyCombo.keyLabel(for: keyCode) }
 
