@@ -92,7 +92,48 @@ struct SettingsView: View {
             Text("Только для отмеченных устройств. Проектор и обычный монитор ничего не запускают.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            modePickers(for: display)
         }
+    }
+
+    /// Выбор режима: macOS для AR-очков нередко берёт 60 Гц, хотя устройство
+    /// умеет больше, а высокие частоты прячет из системных настроек.
+    @ViewBuilder
+    private func modePickers(for display: DisplaySnapshot) -> some View {
+        let resolutions = model.resolutions(for: display)
+        let pinned = model.isModePinned(for: display)
+        let key = model.resolutionKey(for: display)
+
+        HStack(spacing: 8) {
+            Picker("Режим", selection: model.resolutionBinding(for: display)) {
+                Text("Как решит система").tag(SettingsModel.automaticResolution)
+                ForEach(resolutions, id: \.width) { res in
+                    Text("\(res.width) × \(res.height)").tag("\(res.width)x\(res.height)")
+                }
+            }
+
+            if pinned, let size = parse(key) {
+                Picker("", selection: model.refreshBinding(for: display)) {
+                    ForEach(model.refreshRates(for: display, width: size.0, height: size.1), id: \.self) { hz in
+                        Text("\(hz) Гц").tag(hz)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 90)
+            }
+        }
+
+        Text(pinned
+             ? "Режим закрепляется при каждом подключении этого устройства."
+             : "Сейчас: \(model.currentModeLabel(for: display)). Закрепите режим, чтобы он не сбрасывался.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private func parse(_ key: String) -> (Int, Int)? {
+        let parts = key.split(separator: "x").compactMap { Int($0) }
+        return parts.count == 2 ? (parts[0], parts[1]) : nil
     }
 
     // MARK: Управление

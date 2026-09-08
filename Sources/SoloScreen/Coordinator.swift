@@ -25,8 +25,13 @@ final class Coordinator {
 
     private(set) var state = State()
     var onChange: (() -> Void)?
+    /// Подсказка о незнакомом экране; задаётся при запуске приложения.
+    var onDisplaysScanned: (([DisplaySnapshot], Set<DisplayIdentity>) -> Void)?
 
     let trustedDevices = TrustedDevices(storage: UserDefaultsTrustedDeviceStorage())
+    let preferredModes = PreferredModes()
+    /// Режим выставляется один раз на подключение, а не при каждом опросе.
+    private var modeAppliedTo: Set<DisplayIdentity> = []
     private let brightness = BrightnessService()
     private let defaults = UserDefaults.standard
     private let lastBuiltinKey = "LastBuiltinDisplayID"
@@ -150,7 +155,9 @@ final class Coordinator {
         state.builtinEnabled = builtinEnabled
         state.override = decision.override
 
+        onDisplaysScanned?(displays, trustedDevices.all)
         apply(decision.action)
+        syncPreferredModes(for: displays)
         syncBrightness(for: displays)
         notify()
     }
@@ -179,6 +186,62 @@ final class Coordinator {
     private func resolveBuiltinID() -> CGDirectDisplayID? {
         if let builtin = DisplayKit.builtinDisplay() { return builtin.displayID }
         return (defaults.object(forKey: lastBuiltinKey) as? NSNumber)?.uint32Value
+    }
+
+    // MARK: Режимы экрана
+
+    /// Выставляет выбранный пользователем режим при подключении устройства.
+    ///
+    /// macOS для AR-очков нередко выбирает 60 Гц, хотя устройство умеет больше,
+    /// а высокие частоты прячет из «Настроек».
+    private func syncPreferredModes(for displays: [DisplaySnapshot]) {
+        let connected = Set(displays.filter { !$0.isBuiltin }.map(\.identity))
+        modeAppliedTo.formIntersection(connected)
+
+        for display in displays where !display.isBuiltin {
+            guard !modeAppliedTo.contains(display.identity),
+                  let preferred = preferredModes.mode(for: display.identity) else { continue }
+            modeAppliedTo.insert(display.identity)
+
+            let current = DisplayKit.currentMode(for: display.displayID)
+            if let current, current.width == preferred.width, current.height == preferred.height,
+               current.refreshHz == preferred.refreshHz {
+                continue
+            }
+            guard let target = ModeSelector.best(for: preferred,
+                                                 from: DisplayKit.availableModes(for: display.displayID)) else {
+                Log.state("режим \(preferred.encoded) недоступен для «\(display.name)»")
+                continue
+            }
+            let ok = DisplayKit.apply(target, to: display.displayID)
+            Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц "
+                      + "для «\(display.name)» -> \(ok)")
+        }
+    }
+
+    /// Применяет режим немедленно, когда пользователь выбрал его в настройках.
+    func setPreferredMode(_ mode: PreferredMode?, for display: DisplaySnapshot) {
+        preferredModes.set(mode, for: display.identity)
+        modeAppliedTo.remove(display.identity)
+        guard let mode,
+              let target = ModeSelector.best(for: mode,
+                                             from: DisplayKit.availableModes(for: display.displayID)) else {
+            refresh()
+            return
+        }
+        modeAppliedTo.insert(display.identity)
+        let ok = DisplayKit.apply(target, to: display.displayID)
+        Log.state("режим \(target.width)x\(target.height) @ \(target.refreshHz) Гц "
+                  + "для «\(display.name)» -> \(ok)")
+        refresh()
+    }
+
+    func availableModes(for display: DisplaySnapshot) -> [DisplayModeSpec] {
+        DisplayKit.availableModes(for: display.displayID)
+    }
+
+    func currentMode(for display: DisplaySnapshot) -> DisplayModeSpec? {
+        DisplayKit.currentMode(for: display.displayID)
     }
 
     // MARK: Яркость

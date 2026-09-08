@@ -79,6 +79,48 @@ enum DisplayKit {
         onlineDisplays().contains { $0.displayID == displayID }
     }
 
+    // MARK: Режимы
+
+    static func availableModes(for displayID: CGDirectDisplayID) -> [DisplayModeSpec] {
+        // Просим и режимы, скрытые от «Настроек»: у AR-очков высокие частоты
+        // попадают именно туда.
+        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: kCFBooleanTrue!] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode] else {
+            return []
+        }
+        var seen = Set<DisplayModeSpec>()
+        for mode in modes where mode.refreshRate > 0 {
+            seen.insert(spec(from: mode))
+        }
+        return Array(seen)
+    }
+
+    static func currentMode(for displayID: CGDirectDisplayID) -> DisplayModeSpec? {
+        CGDisplayCopyDisplayMode(displayID).map(spec(from:))
+    }
+
+    private static func spec(from mode: CGDisplayMode) -> DisplayModeSpec {
+        DisplayModeSpec(width: mode.width,
+                        height: mode.height,
+                        refreshHz: Int(mode.refreshRate.rounded()),
+                        isHiDPI: mode.pixelWidth > mode.width)
+    }
+
+    @discardableResult
+    static func apply(_ target: DisplayModeSpec, to displayID: CGDirectDisplayID) -> Bool {
+        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: kCFBooleanTrue!] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode],
+              let mode = modes.first(where: { spec(from: $0) == target }) else { return false }
+
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success else { return false }
+        guard CGConfigureDisplayWithDisplayMode(config, displayID, mode, nil) == .success else {
+            CGCancelDisplayConfiguration(config)
+            return false
+        }
+        return CGCompleteDisplayConfiguration(config, .forSession) == .success
+    }
+
     // MARK: Управление
 
     @discardableResult

@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var settingsModel: SettingsModel?
     private let hotKey = HotKeyManager()
+    private let notifier = NewDisplayNotifier()
     private var signalSources: [DispatchSourceSignal] = []
     private let signalQueue = DispatchQueue(label: "com.davnozdu.soloscreen.signals")
 
@@ -27,6 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         hotKey.register(HotKeyManager.stored) { coordinator.toggleBuiltin() }
+
+        notifier.onTrustRequest = { identity in
+            Coordinator.shared.setTrusted(true, for: identity)
+        }
+        notifier.start()
+        coordinator.onDisplaysScanned = { [weak self] displays, trusted in
+            self?.notifier.noticeIfNew(displays, trusted: trusted)
+        }
         installSignalHandlers()
         _ = UpdaterService.shared
 
