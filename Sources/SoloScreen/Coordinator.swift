@@ -299,6 +299,9 @@ final class Coordinator {
         refresh()
     }
 
+    /// Заполняется подсказкой о незнакомых экранах; меню читает это поле.
+    var pendingDisplays: [DisplaySnapshot] = []
+
     func setTrusted(_ trusted: Bool, for identity: DisplayIdentity) {
         trustedDevices.setTrusted(trusted, for: identity)
         // Явное решение пользователя отменяет прежнее ручное переопределение.

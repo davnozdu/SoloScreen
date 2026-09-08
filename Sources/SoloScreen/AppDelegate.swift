@@ -29,12 +29,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         hotKey.register(HotKeyManager.stored) { coordinator.toggleBuiltin() }
 
-        notifier.onTrustRequest = { identity in
+        notifier.onTrustRequest = { [weak self] identity in
+            self?.notifier.markDecided(identity)
             Coordinator.shared.setTrusted(true, for: identity)
         }
         notifier.start()
         coordinator.onDisplaysScanned = { [weak self] displays, trusted in
-            self?.notifier.noticeIfNew(displays, trusted: trusted)
+            guard let self else { return }
+            self.notifier.noticeIfNew(displays, trusted: trusted)
+            Coordinator.shared.pendingDisplays = self.notifier.pending
+        }
+        menuBar.onDecideDisplay = { [weak self] identity, trust in
+            self?.notifier.markDecided(identity)
+            if trust { Coordinator.shared.setTrusted(true, for: identity) }
+            self?.menuBar?.refresh()
         }
         installSignalHandlers()
         _ = UpdaterService.shared

@@ -16,6 +16,16 @@ final class NewDisplayNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     var onTrustRequest: ((DisplayIdentity) -> Void)?
 
+    /// Устройства, о которых пользователь ещё не принял решение.
+    ///
+    /// Меню опирается именно на этот список, а не на уведомления: без платного
+    /// Developer ID macOS отказывает приложению в правах на уведомления
+    /// («Notifications are not allowed for this application»), и подсказка,
+    /// построенная только на них, до пользователя не дошла бы.
+    private(set) var pending: [DisplaySnapshot] = []
+    /// Устройства, о которых уведомление уже показывали.
+    private var notified: Set<String> = []
+
     func start() {
         center.delegate = self
         let trust = UNNotificationAction(identifier: trustActionID,
@@ -34,21 +44,29 @@ final class NewDisplayNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Вызывается на каждом опросе; уведомление уходит только для устройств,
-    /// которых приложение раньше не видело.
+    /// Вызывается на каждом опросе.
     func noticeIfNew(_ displays: [DisplaySnapshot], trusted: Set<DisplayIdentity>) {
-        var seen = Set(defaults.stringArray(forKey: seenKey) ?? [])
-        var added = false
+        let decided = Set(defaults.stringArray(forKey: seenKey) ?? [])
 
-        for display in displays where !display.isBuiltin && !display.identity.isPlaceholder {
-            guard !seen.contains(display.identity.key) else { continue }
-            seen.insert(display.identity.key)
-            added = true
-            // Уже отмеченное устройство подсказки не требует.
-            guard !trusted.contains(display.identity) else { continue }
+        pending = displays.filter { display in
+            !display.isBuiltin
+                && !display.identity.isPlaceholder
+                && !decided.contains(display.identity.key)
+                && !trusted.contains(display.identity)
+        }
+
+        for display in pending where !notified.contains(display.identity.key) {
+            notified.insert(display.identity.key)
             notify(about: display)
         }
-        if added { defaults.set(Array(seen).sorted(), forKey: seenKey) }
+    }
+
+    /// Решение принято — больше про это устройство не спрашиваем.
+    func markDecided(_ identity: DisplayIdentity) {
+        var decided = Set(defaults.stringArray(forKey: seenKey) ?? [])
+        decided.insert(identity.key)
+        defaults.set(Array(decided).sorted(), forKey: seenKey)
+        pending.removeAll { $0.identity == identity }
     }
 
     private func notify(about display: DisplaySnapshot) {

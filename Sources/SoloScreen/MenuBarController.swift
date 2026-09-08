@@ -10,6 +10,8 @@ final class MenuBarController: NSObject {
     private let brightnessLabel = NSTextField(labelWithString: "")
 
     var onOpenSettings: (() -> Void)?
+    /// Решение по незнакомому экрану: доверять или больше не спрашивать.
+    var onDecideDisplay: ((DisplayIdentity, Bool) -> Void)?
 
     init(coordinator: Coordinator = .shared) {
         self.coordinator = coordinator
@@ -24,6 +26,7 @@ final class MenuBarController: NSObject {
     private func buildMenu() {
         menu.delegate = self
         menu.addItem(statusHeader)
+        menu.addItem(promptItem)
         menu.addItem(.separator())
         menu.addItem(toggleItem)
         menu.addItem(.separator())
@@ -55,6 +58,14 @@ final class MenuBarController: NSObject {
 
     /// Пункт-тумблер: галочка показывает текущее состояние, а не только
     /// предлагает действие. Так видно, включён ли режим, ещё до нажатия.
+    /// Подсказка про незнакомый экран. Показывается только когда есть о чём
+    /// спросить, поэтому в обычной работе меню не разрастается.
+    private lazy var promptItem: NSMenuItem = {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isHidden = true
+        return item
+    }()
+
     private lazy var toggleItem: NSMenuItem = {
         let item = NSMenuItem(title: "Только внешний экран",
                               action: #selector(toggleBuiltin), keyEquivalent: "")
@@ -122,6 +133,41 @@ final class MenuBarController: NSObject {
             : "Яркость внешнего экрана"
 
         rebuildTrustedSubmenu(state)
+        rebuildPrompt()
+    }
+
+    private func rebuildPrompt() {
+        guard let display = coordinator.pendingDisplays.first else {
+            promptItem.isHidden = true
+            promptItem.submenu = nil
+            return
+        }
+        promptItem.isHidden = false
+        promptItem.title = "Новый экран: \(display.name)"
+
+        let submenu = NSMenu()
+        let trust = NSMenuItem(title: "Гасить ноутбук для него",
+                               action: #selector(acceptPrompt(_:)), keyEquivalent: "")
+        trust.target = self
+        trust.representedObject = display.identity
+        submenu.addItem(trust)
+
+        let dismiss = NSMenuItem(title: "Не спрашивать больше",
+                                 action: #selector(dismissPrompt(_:)), keyEquivalent: "")
+        dismiss.target = self
+        dismiss.representedObject = display.identity
+        submenu.addItem(dismiss)
+        promptItem.submenu = submenu
+    }
+
+    @objc private func acceptPrompt(_ sender: NSMenuItem) {
+        guard let identity = sender.representedObject as? DisplayIdentity else { return }
+        onDecideDisplay?(identity, true)
+    }
+
+    @objc private func dismissPrompt(_ sender: NSMenuItem) {
+        guard let identity = sender.representedObject as? DisplayIdentity else { return }
+        onDecideDisplay?(identity, false)
     }
 
     /// Сочетание показывается в самом заголовке, а не через `keyEquivalent`.
