@@ -54,14 +54,10 @@ jobs:
             -T /usr/bin/codesign -f pkcs12
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KEYCHAIN"
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
-            | sed -n 's/.*"\(.*\)"$/\1/p' | head -1)
-          if [ -z "$IDENTITY" ]; then
-            echo "В импортированном keychain нет сертификата для codesign" >&2
-            exit 1
-          fi
           rm -f "$RUNNER_TEMP/cert.p12"
-          echo "identity=$IDENTITY" >> "$GITHUB_ENV"
+          # Самоподписанный сертификат может не отображаться как valid identity
+          # в `security find-identity`, но codesign находит его по common name.
+          echo "identity=SoloScreen Self-Signed" >> "$GITHUB_ENV"
 
       - name: Сборка приложения
         env:
