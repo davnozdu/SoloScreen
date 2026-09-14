@@ -15,6 +15,9 @@ jobs:
       - name: Тесты
         run: swift test
 
+      - name: Проверка Swift-интерполяций
+        run: ./Scripts/check-swift-interpolation.sh
+
       - name: Сборка приложения
         run: VERSION=0.0.0-ci BUILD_NUMBER=0 ./Scripts/build-app.sh
 
