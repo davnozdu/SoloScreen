@@ -106,8 +106,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hosting = NSHostingController(rootView: SettingsView(model: model))
         let window = NSWindow(contentViewController: hosting)
         window.title = "SoloScreen"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 940, height: 680))
+        window.minSize = NSSize(width: 900, height: 620)
         window.center()
         window.delegate = self
         settingsWindow = window
