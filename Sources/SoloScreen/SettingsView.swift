@@ -124,7 +124,8 @@ struct SettingsView: View {
             .padding(.horizontal, 10)
         }
         .padding(20)
-        .frame(width: 220, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .frame(width: 220)
         .background(.regularMaterial)
     }
 
@@ -187,7 +188,7 @@ struct SettingsView: View {
                 emptyDisplaysCard
             } else {
                 VStack(spacing: 10) {
-                    ForEach(model.externals) { display in
+                    ForEach(model.externals, id: \.identity) { display in
                         displaySummary(display)
                     }
                 }
@@ -280,7 +281,7 @@ struct SettingsView: View {
 
             Image(systemName: "eyeglasses")
                 .font(.system(size: 48, weight: .medium))
-                .foregroundStyle(.accent)
+                .foregroundStyle(Color.accentColor)
                 .padding(13)
                 .background(.background, in: Circle())
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 5)
@@ -329,7 +330,7 @@ struct SettingsView: View {
             HStack(spacing: 13) {
                 Image(systemName: "eyeglasses")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.accent)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 38, height: 38)
                     .background(Color.accentColor.opacity(0.12), in: Circle())
 
@@ -369,7 +370,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
 
                 VStack(spacing: 14) {
-                    ForEach(model.externals) { display in
+                    ForEach(model.externals, id: \.identity) { display in
                         displayCard(display)
                     }
                 }
@@ -403,7 +404,7 @@ struct SettingsView: View {
                 HStack(spacing: 13) {
                     Image(systemName: "eyeglasses")
                         .font(.system(size: 19, weight: .medium))
-                        .foregroundStyle(.accent)
+                        .foregroundStyle(Color.accentColor)
                         .frame(width: 42, height: 42)
                         .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
@@ -601,7 +602,7 @@ struct SettingsView: View {
             if let hint = recorder.hint {
                 Label(hint, systemImage: "info.circle")
                     .font(.caption)
-                    .foregroundStyle(.accent)
+                    .foregroundStyle(Color.accentColor)
             }
         }
         .padding(18)
