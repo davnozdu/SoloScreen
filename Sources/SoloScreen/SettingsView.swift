@@ -117,7 +117,7 @@ struct SettingsView: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
-                Text("Версия (model.version)")
+                Text("Версия \(model.version)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -293,7 +293,7 @@ struct SettingsView: View {
     private var quickStats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             statCard(icon: "display.2", color: .accentColor,
-                     value: "(model.externals.count)", label: "Внешних экранов")
+                     value: "\(model.externals.count)", label: "Внешних экранов")
             statCard(icon: "keyboard", color: .purple,
                      value: model.hotKeyLabel, label: "Быстрое переключение")
             statCard(icon: "slider.horizontal.3", color: .orange,
@@ -510,7 +510,7 @@ struct SettingsView: View {
                 .frame(maxWidth: 360)
             }
 
-            Text("Профили переключаются клавишей (model.profileHotKeyLabel) по кругу.")
+            Text("Профили переключаются клавишей \(model.profileHotKeyLabel) по кругу.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -539,7 +539,7 @@ struct SettingsView: View {
                 if pinned, let size = SettingsModel.parse(key) {
                     Picker("Частота", selection: model.refreshBinding(for: display)) {
                         ForEach(model.refreshRates(for: display, width: size.width, height: size.height), id: \.self) { hz in
-                            Text("(hz) Гц").tag(hz)
+                            Text("\(hz) Гц").tag(hz)
                         }
                     }
                     .labelsHidden()
@@ -645,12 +645,12 @@ struct SettingsView: View {
                     Label("Задержка восстановления", systemImage: "timer")
                     Spacer()
                     Stepper(value: model.wakeDelayBinding, in: model.wakeDelayRange) {
-                        Text("(model.wakeDelayBinding.wrappedValue) с")
+                        Text("\(model.wakeDelayBinding.wrappedValue) с")
                             .font(.system(.body, design: .monospaced))
                             .frame(width: 48, alignment: .trailing)
                     }
                 }
-                Text("Если очки после сна не оживут, за это время можно вернуть экран ноутбука клавишей (model.hotKeyLabel).")
+                Text("Если очки после сна не оживут, за это время можно вернуть экран ноутбука клавишей \(model.hotKeyLabel).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -685,7 +685,7 @@ struct SettingsView: View {
         if !model.canGoSolo {
             return "Подключите внешний экран, чтобы включить этот режим."
         }
-        return "Также доступно по клавише (model.hotKeyLabel) и из меню в строке меню."
+        return "Также доступно по клавише \(model.hotKeyLabel) и из меню в строке меню."
     }
 
     private var colorHint: String {
@@ -693,7 +693,7 @@ struct SettingsView: View {
     }
 
     private func modeHint(for display: DisplaySnapshot, pinned: Bool) -> String {
-        let current = "Сейчас: (model.currentModeLabel(for: display))."
+        let current = "Сейчас: \(model.currentModeLabel(for: display))."
         guard model.hasHiDPIModes(for: display) else {
             return pinned ? "Режим закрепляется при каждом подключении." : current + " Закрепите режим, чтобы он не сбрасывался."
         }
@@ -718,7 +718,7 @@ struct SettingsView: View {
             .buttonStyle(.bordered)
             .disabled(!model.canCheckUpdates)
             Spacer()
-            Text("SoloScreen (model.version)")
+            Text("SoloScreen \(model.version)")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
