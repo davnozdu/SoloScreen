@@ -147,4 +147,44 @@ struct DisplayProfileTests {
         #expect(profile.blue == 0)
         #expect(profile.mode == nil)
     }
+
+    @Test("Порча одного устройства не стирает профили остальных")
+    func порчаНеСтираетЧужие() throws {
+        // Раньше весь кусок разбирался одним декодером: одна нечитаемая строка
+        // режима превращала хранилище в пустое, и следующая запись затирала
+        // профили всех устройств.
+        let suite = "профили-тест-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DisplayProfiles(defaults: defaults)
+        store.add(DisplayProfile(name: "Очки 1"), for: очки)
+        store.add(DisplayProfile(name: "Монитор 1",
+                                 mode: PreferredMode(width: 1920, height: 1080, refreshHz: 60)),
+                  for: монитор)
+
+        func испортить(_ значение: Any) throws {
+            let data = try #require(defaults.data(forKey: DisplayProfiles.storageKey))
+            var root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            root[монитор.key] = значение
+            defaults.set(try JSONSerialization.data(withJSONObject: root),
+                         forKey: DisplayProfiles.storageKey)
+        }
+
+        // Нечитаемая строка режима: профиль остаётся, режим сбрасывается.
+        try испортить([["name": "Монитор 1", "mode": "мусор"]])
+        #expect(store.profiles(for: монитор).map(\.name) == ["Монитор 1"])
+        #expect(store.profiles(for: монитор).first?.mode == nil)
+        #expect(store.profiles(for: очки).map(\.name) == ["Очки 1"])
+
+        // Нечитаемая запись целиком: теряется только она.
+        try испортить(["совсем мусор"])
+        #expect(store.profiles(for: монитор).isEmpty)
+        #expect(store.profiles(for: очки).map(\.name) == ["Очки 1"])
+
+        // Сохранение после порчи не уносит чужие профили, а прежний кусок
+        // остаётся в резервной копии.
+        store.add(DisplayProfile(name: "Очки 2"), for: очки)
+        #expect(store.profiles(for: очки).map(\.name) == ["Очки 1", "Очки 2"])
+        #expect(defaults.data(forKey: DisplayProfiles.backupKey) != nil)
+    }
 }
