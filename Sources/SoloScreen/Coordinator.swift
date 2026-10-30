@@ -10,7 +10,7 @@ import SoloCore
 final class Coordinator {
     static let shared = Coordinator()
 
-    struct State {
+    struct State: Equatable {
         var displays: [DisplaySnapshot] = []
         var builtinEnabled: Bool = true
         var brightness: BrightnessLevel = .default
@@ -167,6 +167,8 @@ final class Coordinator {
         if let builtinID = resolveBuiltinID(), !DisplayKit.builtinIsOnline() {
             DisplayKit.setEnabled(builtinID, true)
         }
+        // Меню должно показать снятое переопределение сразу, а не через опрос.
+        notify()
     }
 
     private func handleWake() {
@@ -197,7 +199,10 @@ final class Coordinator {
 
     func refresh() {
         let displays = DisplayKit.onlineDisplays()
-        if let builtin = displays.first(where: { $0.isBuiltin }) {
+        if let builtin = displays.first(where: { $0.isBuiltin }),
+           (defaults.object(forKey: lastBuiltinKey) as? NSNumber)?.uint32Value != builtin.displayID {
+            // Идентификатор нужен только пока экран выключен. Писать его
+            // в UserDefaults на каждом опросе, то есть раз в две секунды, незачем.
             defaults.set(NSNumber(value: builtin.displayID), forKey: lastBuiltinKey)
         }
 
@@ -219,6 +224,7 @@ final class Coordinator {
             lastLoggedSummary = summary
             Log.state("опрос: " + summary)
         }
+        let previous = state
         state.displays = displays
         state.builtinEnabled = builtinEnabled
         state.override = decision.override
@@ -226,7 +232,10 @@ final class Coordinator {
         onDisplaysScanned?(displays, trustedDevices.all)
         apply(decision.action)
         syncProfiles(for: displays)
-        notify()
+        // Меню и модель настроек перестраиваются только при настоящем изменении
+        // состояния: опрос идёт раз в две секунды, и безусловное оповещение
+        // стоило около процента процессора в простое.
+        if state != previous { notify() }
     }
 
     private func apply(_ action: BuiltinAction) {
@@ -243,7 +252,9 @@ final class Coordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self else { return }
             self.isApplying = false
-            self.state.builtinEnabled = DisplayKit.onlineDisplays().contains { $0.isBuiltin }
+            let enabled = DisplayKit.onlineDisplays().contains { $0.isBuiltin }
+            guard self.state.builtinEnabled != enabled else { return }
+            self.state.builtinEnabled = enabled
             self.notify()
         }
     }

@@ -84,10 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let model = SettingsModel()
         model.onProfileHotKeyChange = { [weak self] combo in
-            self?.profileHotKey.register(combo) { Coordinator.shared.cycleProfile() }
+            guard let self else { return false }
+            return self.profileHotKey.register(combo) { Coordinator.shared.cycleProfile() }
         }
         model.onHotKeyChange = { [weak self] combo in
-            self?.hotKey.register(combo) { Coordinator.shared.toggleBuiltin() }
+            guard let self else { return false }
+            return self.hotKey.register(combo) { Coordinator.shared.toggleBuiltin() }
         }
         // На время записи глобальная клавиша снимается, иначе Carbon перехватил
         // бы её раньше окна и переназначить сочетание на само себя не вышло бы.
