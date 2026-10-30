@@ -16,14 +16,24 @@ SIGN_UPDATE="$(find "$ROOT/.build" -type f -name sign_update -not -path "*old_ds
 [ -n "$SIGN_UPDATE" ] || { echo "Не найден sign_update из Sparkle" >&2; exit 1; }
 
 SIZE=$(stat -f%z "$DMG")
-if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
-  KEYFILE="$(mktemp)"
-  printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEYFILE"
-  SIGNATURE=$("$SIGN_UPDATE" "$DMG" -f "$KEYFILE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
-  rm -f "$KEYFILE"
-else
-  echo "ВНИМАНИЕ: SPARKLE_PRIVATE_KEY не задан, обновление будет без подписи" >&2
-  SIGNATURE=""
+# Без подписи appcast публиковать нельзя: при заполненном SUPublicEDKey Sparkle
+# отвергнет обновление, а релиз будет выглядеть успешным.
+if [ -z "${SPARKLE_PRIVATE_KEY:-}" ]; then
+  echo "Нет SPARKLE_PRIVATE_KEY: обновление не установится ни у кого, релиз остановлен" >&2
+  exit 1
+fi
+[ -s "$ROOT/Scripts/sparkle-public-key.txt" ] || {
+  echo "Пустой Scripts/sparkle-public-key.txt: сверять подпись не с чем" >&2
+  exit 1
+}
+
+KEYFILE="$(mktemp)"
+printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEYFILE"
+SIGNATURE=$("$SIGN_UPDATE" "$DMG" -f "$KEYFILE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+rm -f "$KEYFILE"
+if [ -z "$SIGNATURE" ]; then
+  echo "sign_update не вернул подпись — appcast не собран" >&2
+  exit 1
 fi
 
 URL="https://github.com/$REPO/releases/download/v$VERSION/SoloScreen-$VERSION.dmg"
