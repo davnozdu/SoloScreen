@@ -13,8 +13,14 @@ final class SettingsModel: ObservableObject {
     let recorder = HotKeyRecorder()
 
     private let coordinator: Coordinator
-    var onHotKeyChange: ((KeyCombo) -> Void)?
-    var onProfileHotKeyChange: ((KeyCombo) -> Void)?
+    /// Возвращает true, если сочетание удалось повесить на систему.
+    /// Неудачную регистрацию сохранять нельзя: клавиша молча не работает
+    /// и после перезапуска, а в интерфейсе выглядит назначенной.
+    var onHotKeyChange: ((KeyCombo) -> Bool)?
+    var onProfileHotKeyChange: ((KeyCombo) -> Bool)?
+
+    /// Причина, по которой последнее сочетание не назначилось.
+    @Published private(set) var hotKeyError: String?
 
     init(coordinator: Coordinator = .shared) {
         self.coordinator = coordinator
@@ -26,13 +32,25 @@ final class SettingsModel: ObservableObject {
     }
 
     func reload() {
-        externals = coordinator.state.externals
-        builtinEnabled = coordinator.state.builtinEnabled
-        canCheckUpdates = UpdaterService.shared.canCheck
-        statusText = Self.status(for: coordinator.state)
-        hotKeyLabel = HotKeyManager.stored.label
-        profileHotKeyLabel = HotKeyManager.storedProfile.label
-        objectWillChange.send()
+        let state = coordinator.state
+        let displays = state.externals
+        if displays.map(\.identity) != externals.map(\.identity) {
+            // Устройства переподключились — закешированный список режимов
+            // мог устареть.
+            modeCache.removeAll()
+        }
+        // Каждое присваивание в @Published — отдельный проход `body`. Опрос идёт
+        // раз в две секунды, поэтому пишем только изменившееся.
+        if externals != displays { externals = displays }
+        if builtinEnabled != state.builtinEnabled { builtinEnabled = state.builtinEnabled }
+        let status = Self.status(for: state)
+        if statusText != status { statusText = status }
+        let canCheck = UpdaterService.shared.canCheck
+        if canCheckUpdates != canCheck { canCheckUpdates = canCheck }
+        let hotKey = HotKeyManager.stored.label
+        if hotKeyLabel != hotKey { hotKeyLabel = hotKey }
+        let profileHotKey = HotKeyManager.storedProfile.label
+        if profileHotKeyLabel != profileHotKey { profileHotKeyLabel = profileHotKey }
     }
 
     private static func status(for state: Coordinator.State) -> String {
@@ -286,39 +304,55 @@ final class SettingsModel: ObservableObject {
     // MARK: Горячая клавиша
 
     func startRecording() {
-        recorder.start { [weak self] combo in
-            guard let self else { return }
-            HotKeyManager.stored = combo
-            self.onHotKeyChange?(combo)
-            self.hotKeyLabel = combo.label
-            self.objectWillChange.send()
-        }
+        recorder.start { [weak self] combo in self?.assign(combo, forProfile: false) }
     }
 
     func resetHotKey() {
-        HotKeyManager.stored = .default
-        onHotKeyChange?(.default)
-        hotKeyLabel = KeyCombo.default.label
-        objectWillChange.send()
+        assign(.default, forProfile: false)
     }
 
     /// Запись сочетания идёт по одному: пишущий рекордер общий, а вот куда
     /// сохранить результат — решает вызов.
     func startRecordingProfileHotKey() {
-        recorder.start { [weak self] combo in
-            guard let self else { return }
-            HotKeyManager.storedProfile = combo
-            self.onProfileHotKeyChange?(combo)
-            self.profileHotKeyLabel = combo.label
-            self.objectWillChange.send()
-        }
+        recorder.start { [weak self] combo in self?.assign(combo, forProfile: true) }
     }
 
     func resetProfileHotKey() {
-        HotKeyManager.storedProfile = .defaultProfileSwitch
-        onProfileHotKeyChange?(.defaultProfileSwitch)
-        profileHotKeyLabel = KeyCombo.defaultProfileSwitch.label
-        objectWillChange.send()
+        assign(.defaultProfileSwitch, forProfile: true)
+    }
+
+    /// Назначает сочетание и сохраняет его только после успешной регистрации.
+    ///
+    /// Проверяются два отказа, которые раньше проходили молча: сочетание уже
+    /// висит на другой команде SoloScreen и сочетание занято другим
+    /// приложением (`RegisterEventHotKey` вернул ошибку).
+    private func assign(_ combo: KeyCombo, forProfile: Bool) {
+        let other = forProfile ? HotKeyManager.stored : HotKeyManager.storedProfile
+        guard combo != other else {
+            hotKeyError = "Сочетание \(combo.label) уже назначено другой команде SoloScreen."
+            return
+        }
+        let applied = forProfile ? onProfileHotKeyChange?(combo) : onHotKeyChange?(combo)
+        guard applied == true else {
+            // `register` снимает прежнюю клавишу до попытки поставить новую:
+            // без возврата неудачная попытка оставила бы пользователя вовсе
+            // без сочетания.
+            if forProfile {
+                _ = onProfileHotKeyChange?(HotKeyManager.storedProfile)
+            } else {
+                _ = onHotKeyChange?(HotKeyManager.stored)
+            }
+            hotKeyError = "Сочетание \(combo.label) занято другим приложением."
+            return
+        }
+        hotKeyError = nil
+        if forProfile {
+            HotKeyManager.storedProfile = combo
+            profileHotKeyLabel = combo.label
+        } else {
+            HotKeyManager.stored = combo
+            hotKeyLabel = combo.label
+        }
     }
 
     // MARK: Поведение после пробуждения

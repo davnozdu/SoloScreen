@@ -192,14 +192,20 @@ AR-очков отсутствует.
 
 ## Сборка из исходников
 
+Нужен полный Xcode: окно настроек на SwiftUI использует макросы `@State`
+и `@FocusState`, а их реализация (`SwiftUIMacros`) ставится только вместе
+с Xcode. С одними Command Line Tools собирается лишь ядро:
+`swift build --target SoloCore`, — а `swift test` и сборка приложения падают
+на `external macro implementation type 'SwiftUIMacros...' could not be found`.
+
 ```sh
 ./Scripts/test.sh
 VERSION=0.1.0 ./Scripts/build-app.sh
 VERSION=0.1.0 ./Scripts/make-dmg.sh
 ```
 
-`Scripts/test.sh` нужен потому, что без полного Xcode модули Testing и XCTest
-лежат в Command Line Tools и не подхватываются сами.
+`Scripts/test.sh` дополнительно чинит пути к модулям `Testing` и `XCTest`,
+которые в Command Line Tools лежат отдельно от компилятора.
 
 Готовые DMG собираются на GitHub Actions при публикации тега `v*`.
 

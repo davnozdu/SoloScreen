@@ -599,6 +599,12 @@ struct SettingsView: View {
             shortcutRow(title: "Смена профиля", subtitle: "Следующий профиль активного устройства", label: model.profileHotKeyLabel,
                         action: { model.startRecordingProfileHotKey() }, reset: { model.resetProfileHotKey() })
 
+            if let error = model.hotKeyError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             if let hint = recorder.hint {
                 Label(hint, systemImage: "info.circle")
                     .font(.caption)

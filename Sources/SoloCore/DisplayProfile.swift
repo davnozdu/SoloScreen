@@ -39,7 +39,13 @@ public struct DisplayProfile: Equatable, Codable, Identifiable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Профиль"
-        mode = try container.decodeIfPresent(PreferredMode.self, forKey: .mode)
+        // Режим разбирается вручную: строгое чтение одной испорченной строки
+        // обнуляло бы профиль, а раньше — и весь список профилей устройства.
+        if let raw = try container.decodeIfPresent(String.self, forKey: .mode) {
+            mode = PreferredMode(encoded: raw)
+        } else {
+            mode = nil
+        }
         brightness = try container.decodeIfPresent(Double.self, forKey: .brightness)
             ?? BrightnessLevel.maximum
         kelvin = try container.decodeIfPresent(Double.self, forKey: .kelvin)
@@ -51,7 +57,11 @@ public struct DisplayProfile: Equatable, Codable, Identifiable, Sendable {
 /// Профили всех устройств и указатель на активный.
 public final class DisplayProfiles {
     private let defaults: UserDefaults
-    private let profilesKey = "DisplayProfiles"
+    /// Ключи открыты тестам: порчу хранилища проверяем снаружи, не заводя
+    /// отдельного API только ради проверки.
+    static let storageKey = "DisplayProfiles"
+    static let backupKey = "DisplayProfilesBackup"
+    private var profilesKey: String { Self.storageKey }
     private let activeKey = "ActiveDisplayProfiles"
 
     public init(defaults: UserDefaults = .standard) {
@@ -136,10 +146,36 @@ public final class DisplayProfiles {
     // MARK: Хранение
 
     private func stored() -> [String: [DisplayProfile]] {
-        guard let data = defaults.data(forKey: profilesKey),
-              let decoded = try? JSONDecoder().decode([String: [DisplayProfile]].self, from: data)
-        else { return [:] }
-        return decoded
+        guard let data = defaults.data(forKey: profilesKey) else { return [:] }
+        return DisplayProfiles.decode(data)
+    }
+
+    /// Разбирает хранилище по устройству и по профилю.
+    ///
+    /// Прежний разбор читал весь кусок одним `JSONDecoder` и при любой ошибке
+    /// возвращал пустой словарь — то есть испорченная запись одного устройства
+    /// стирала профили всех остальных при следующем сохранении. Теперь
+    /// выбрасывается только негодная запись.
+    static func decode(_ data: Data) -> [String: [DisplayProfile]] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return [:]
+        }
+        var result: [String: [DisplayProfile]] = [:]
+        for (key, value) in root {
+            guard let entries = value as? [Any] else { continue }
+            var list: [DisplayProfile] = []
+            for entry in entries {
+                // Только словарь: `data(withJSONObject:)` на строке или числе
+                // бросает исключение Objective-C, которое `try?` не ловит.
+                guard let object = entry as? [String: Any],
+                      let item = try? JSONSerialization.data(withJSONObject: object),
+                      let profile = try? JSONDecoder().decode(DisplayProfile.self, from: item)
+                else { continue }
+                list.append(profile)
+            }
+            if !list.isEmpty { result[key] = list }
+        }
+        return result
     }
 
     private func write(_ list: [DisplayProfile], for identity: DisplayIdentity) {
@@ -150,6 +186,11 @@ public final class DisplayProfiles {
             all[identity.key] = list
         }
         guard let data = try? JSONEncoder().encode(all) else { return }
+        // Прежний кусок сохраняется отдельно: если разбор что-то потерял, данные
+        // можно достать руками, а не восстанавливать настройки по памяти.
+        if let previous = defaults.data(forKey: profilesKey) {
+            defaults.set(previous, forKey: Self.backupKey)
+        }
         defaults.set(data, forKey: profilesKey)
     }
 

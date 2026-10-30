@@ -11,6 +11,10 @@ import SoloCore
 /// Яркость встроенного экрана не трогается никогда — иначе сломается
 /// автоподстройка, которая сама корректно переживает выключение экрана.
 final class BrightnessService {
+    /// Применение идёт с главного потока, аварийное восстановление — из очереди
+    /// сигналов. Без замка выход из приложения мог пересечься с установкой
+    /// таблицы: гонка на `appliedTo` и на самих вызовах CoreGraphics.
+    private let lock = NSLock()
     private(set) var level: BrightnessLevel = .default
     private(set) var whitePoint: WhitePoint = .neutral
     private(set) var blueReduction: BlueReduction = .none
@@ -20,6 +24,8 @@ final class BrightnessService {
                whitePoint: WhitePoint = .neutral,
                blueReduction: BlueReduction = .none,
                to displayID: CGDirectDisplayID) {
+        lock.lock()
+        defer { lock.unlock() }
         self.level = level
         self.whitePoint = whitePoint
         self.blueReduction = blueReduction
@@ -34,6 +40,8 @@ final class BrightnessService {
     /// Возврат системных гамма-таблиц. Обязателен при выходе, иначе экран
     /// останется затемнённым после закрытия приложения.
     func restoreAll() {
+        lock.lock()
+        defer { lock.unlock() }
         level = .default
         whitePoint = .neutral
         blueReduction = .none
