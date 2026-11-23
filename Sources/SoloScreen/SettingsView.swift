@@ -766,6 +766,11 @@ private struct ProfileNameField: View {
     }
     @FocusState private var focused: Bool
 
+    init(name: String, commit: @escaping (String) -> Void) {
+        self.name = name
+        self.commit = commit
+    }
+
     var body: some View {
         TextField("Имя профиля", text: _draft.projectedValue)
             .textFieldStyle(.roundedBorder)
