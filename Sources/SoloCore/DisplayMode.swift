@@ -131,21 +131,30 @@ public enum ModeSelector {
             guard seen.insert(key + (mode.isHiDPI ? "r" : "")).inserted else { continue }
             options.append((mode.width, mode.height, mode.isHiDPI))
         }
-        // Внутри одного размера обычный вариант идёт первым: он дешевле.
+        // Внутри одного размера удвоенная плотность («— чётко») идёт первой:
+        // на AR-очках именно она делает текст на сайтах и в интерфейсе читаемым.
         return options.sorted {
             if $0.width != $1.width { return $0.width > $1.width }
             if $0.height != $1.height { return $0.height > $1.height }
-            return !$0.isHiDPI && $1.isHiDPI
+            return $0.isHiDPI && !$1.isHiDPI
         }
     }
 
     /// Частоты, доступные для выбранного разрешения — от большей к меньшей.
+    /// Если задана плотность `isHiDPI`, учитываются только режимы этой плотности
+    /// (с откатом на все режимы этого размера, если для указанной плотности ничего нет).
     public static func refreshRates(forWidth width: Int, height: Int,
+                                    isHiDPI: Bool? = nil,
                                     in modes: [DisplayModeSpec]) -> [Int] {
-        let rates = modes
-            .filter { $0.width == width && $0.height == height }
-            .map(\.refreshHz)
-        return Array(Set(rates)).sorted(by: >)
+        let sameSize = modes.filter { $0.width == width && $0.height == height }
+        let filtered: [DisplayModeSpec]
+        if let isHiDPI {
+            let exact = sameSize.filter { $0.isHiDPI == isHiDPI }
+            filtered = exact.isEmpty ? sameSize : exact
+        } else {
+            filtered = sameSize
+        }
+        return Array(Set(filtered.map(\.refreshHz))).sorted(by: >)
     }
 }
 

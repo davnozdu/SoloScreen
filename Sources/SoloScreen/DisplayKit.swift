@@ -104,12 +104,6 @@ enum DisplayKit {
         return ids.contains { CGDisplayIsBuiltin($0) != 0 }
     }
 
-    /// Выключенный экран пропадает из списка online, поэтому его отсутствие там
-    /// и означает выключенное состояние.
-    static func isEnabled(_ displayID: CGDirectDisplayID) -> Bool {
-        onlineDisplays().contains { $0.displayID == displayID }
-    }
-
     // MARK: Режимы
 
     static func availableModes(for displayID: CGDirectDisplayID) -> [DisplayModeSpec] {
@@ -160,30 +154,29 @@ enum DisplayKit {
         guard count(displayID, &total) == 0, total > 0, total < 10_000 else { return [] }
 
         var parsed: [HiddenMode] = []
+        parsed.reserveCapacity(Int(total))
+        var buffer = [UInt8](repeating: 0, count: Int(ModeLayout.length))
         for index in 0..<total {
-            var buffer = [UInt8](repeating: 0, count: Int(ModeLayout.length))
             guard describe(displayID, index, &buffer, ModeLayout.length) == 0 else { continue }
-            func read32(_ offset: Int) -> UInt32 {
-                buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
-            }
-            func read16(_ offset: Int) -> UInt16 {
-                buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self) }
-            }
-            let width = Int(read32(ModeLayout.width))
-            let height = Int(read32(ModeLayout.height))
-            let pixelWidth = Int(read32(ModeLayout.pixelWidth))
-            let pixelHeight = Int(read32(ModeLayout.pixelHeight))
-            let refresh = Int(read16(ModeLayout.refresh))
+            let entry: HiddenMode? = buffer.withUnsafeBytes { raw in
+                let width = Int(raw.loadUnaligned(fromByteOffset: ModeLayout.width, as: UInt32.self))
+                let height = Int(raw.loadUnaligned(fromByteOffset: ModeLayout.height, as: UInt32.self))
+                let pixelWidth = Int(raw.loadUnaligned(fromByteOffset: ModeLayout.pixelWidth, as: UInt32.self))
+                let pixelHeight = Int(raw.loadUnaligned(fromByteOffset: ModeLayout.pixelHeight, as: UInt32.self))
+                let refresh = Int(raw.loadUnaligned(fromByteOffset: ModeLayout.refresh, as: UInt16.self))
 
-            guard (320...8192).contains(width), (200...8192).contains(height),
-                  (20...480).contains(refresh),
-                  pixelWidth == width || pixelWidth == width * 2,
-                  pixelHeight == height || pixelHeight == height * 2 else { continue }
+                guard (320...8192).contains(width), (200...8192).contains(height),
+                      (20...480).contains(refresh),
+                      pixelWidth == width || pixelWidth == width * 2,
+                      pixelHeight == height || pixelHeight == height * 2 else { return nil }
 
-            parsed.append(HiddenMode(number: Int32(read32(ModeLayout.number)),
-                                     spec: DisplayModeSpec(width: width, height: height,
-                                                           refreshHz: refresh,
-                                                           isHiDPI: pixelWidth > width)))
+                let number = Int32(bitPattern: raw.loadUnaligned(fromByteOffset: ModeLayout.number, as: UInt32.self))
+                return HiddenMode(number: number,
+                                  spec: DisplayModeSpec(width: width, height: height,
+                                                        refreshHz: refresh,
+                                                        isHiDPI: pixelWidth > width))
+            }
+            if let entry { parsed.append(entry) }
         }
 
         // Проверка разбора: то, что включено прямо сейчас, обязано найтись.
@@ -211,6 +204,7 @@ enum DisplayKit {
     /// публичном списке нет, — то есть для удвоенной плотности точек.
     @discardableResult
     static func apply(_ target: DisplayModeSpec, to displayID: CGDirectDisplayID) -> Bool {
+        let applied: Bool
         if let mode = publicModes(for: displayID).first(where: { spec(from: $0) == target }) {
             var config: CGDisplayConfigRef?
             guard CGBeginDisplayConfiguration(&config) == .success else { return false }
@@ -218,19 +212,24 @@ enum DisplayKit {
                 CGCancelDisplayConfiguration(config)
                 return false
             }
-            return CGCompleteDisplayConfiguration(config, .forSession) == .success
-        }
+            applied = CGCompleteDisplayConfiguration(config, .forSession) == .success
+        } else {
+            guard let configure = configureMode,
+                  let hidden = hiddenModes(for: displayID).first(where: { $0.spec == target }) else { return false }
 
-        guard let configure = configureMode,
-              let hidden = hiddenModes(for: displayID).first(where: { $0.spec == target }) else { return false }
-
-        var config: CGDisplayConfigRef?
-        guard CGBeginDisplayConfiguration(&config) == .success else { return false }
-        guard configure(config, displayID, hidden.number) == 0 else {
-            CGCancelDisplayConfiguration(config)
-            return false
+            var config: CGDisplayConfigRef?
+            guard CGBeginDisplayConfiguration(&config) == .success else { return false }
+            guard configure(config, displayID, hidden.number) == 0 else {
+                CGCancelDisplayConfiguration(config)
+                return false
+            }
+            applied = CGCompleteDisplayConfiguration(config, .forSession) == .success
         }
-        return CGCompleteDisplayConfiguration(config, .forSession) == .success
+        if applied, let actual = currentMode(for: displayID) {
+            Log.state("фактический режим экрана \(displayID): \(actual.width)x\(actual.height) @ \(actual.refreshHz) Гц"
+                      + (actual.isHiDPI ? " (удвоенная плотность)" : ""))
+        }
+        return applied
     }
 
     // MARK: Управление

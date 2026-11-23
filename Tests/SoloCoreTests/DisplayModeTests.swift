@@ -52,6 +52,8 @@ struct DisplayModeTests {
     func списокЧастот() {
         #expect(ModeSelector.refreshRates(forWidth: 1920, height: 1080, in: xrealModes) == [120, 90, 60])
         #expect(ModeSelector.refreshRates(forWidth: 1280, height: 720, in: xrealModes) == [120, 60])
+        #expect(ModeSelector.refreshRates(forWidth: 1280, height: 720, isHiDPI: false, in: xrealModes) == [60])
+        #expect(ModeSelector.refreshRates(forWidth: 1280, height: 720, isHiDPI: true, in: xrealModes) == [120])
     }
 
     @Test("Выбор переживает кругооборот через хранилище")
@@ -137,8 +139,8 @@ struct DisplayModeTests {
         #expect(retina?.isHiDPI == true)
         let обычное = list.first { $0.width == 1920 }
         #expect(обычное?.isHiDPI == false)
-        // 1280x720 есть в обоих видах — показываем оба, обычный первым.
+        // 1280x720 есть в обоих видах — показываем оба, удвоенная плотность («чётко») первой.
         let семьсотДвадцать = list.filter { $0.width == 1280 }
-        #expect(семьсотДвадцать.map(\.isHiDPI) == [false, true])
+        #expect(семьсотДвадцать.map(\.isHiDPI) == [true, false])
     }
 }

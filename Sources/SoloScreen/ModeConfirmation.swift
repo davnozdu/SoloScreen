@@ -11,6 +11,7 @@ enum ModeConfirmation {
 
     /// Вызывает `completion(true)`, если человек подтвердил режим, и
     /// `completion(false)`, если отказался или не ответил.
+    /// Клавиша Esc мгновенно возвращает прежний режим, даже если экран погас.
     static func ask(mode: DisplayModeSpec, displayName: String,
                     completion: @escaping (Bool) -> Void) {
         DispatchQueue.main.async {
@@ -19,10 +20,11 @@ enum ModeConfirmation {
             alert.informativeText = "Экран «\(displayName)» переключён на \(mode.resolutionLabel) · "
                 + mode.refreshLabel
                 + (mode.isHiDPI ? " с удвоенной плотностью точек" : "")
-                + ".\n\nЕсли изображения нет, ничего не нажимайте: через \(Int(timeout)) с "
+                + ".\n\nЕсли изображения нет, нажмите Esc или подождите \(Int(timeout)) с — "
                 + "вернётся прежний режим."
             alert.addButton(withTitle: "Оставить")
-            alert.addButton(withTitle: "Вернуть")
+            let revert = alert.addButton(withTitle: "Вернуть")
+            revert.keyEquivalent = "\u{1b}"
 
             // Таймер вешается на common-режимы: модальное окно крутит свой цикл,
             // и обычный scheduledTimer в нём не сработал бы.

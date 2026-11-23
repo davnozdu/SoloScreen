@@ -10,10 +10,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 FRAMEWORKS="/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 INTEROP="/Library/Developer/CommandLineTools/Library/Developer/usr/lib"
+PLUGINS="/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing"
 
 if [ -d "$FRAMEWORKS/Testing.framework" ] && [ ! -d "/Applications/Xcode.app" ]; then
   exec swift test \
     -Xswiftc -F -Xswiftc "$FRAMEWORKS" \
+    -Xswiftc -plugin-path -Xswiftc "$PLUGINS" \
     -Xlinker -F -Xlinker "$FRAMEWORKS" \
     -Xlinker -rpath -Xlinker "$FRAMEWORKS" \
     -Xlinker -rpath -Xlinker "$INTEROP" "$@"

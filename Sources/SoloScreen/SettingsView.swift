@@ -8,7 +8,11 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var recorder: HotKeyRecorder
 
-    @State private var selection: Destination = .overview
+    private var _selection = State<Destination>(wrappedValue: .overview)
+    private var selection: Destination {
+        get { _selection.wrappedValue }
+        nonmutating set { _selection.wrappedValue = newValue }
+    }
 
     init(model: SettingsModel) {
         self.model = model
@@ -538,13 +542,19 @@ struct SettingsView: View {
 
                 if pinned, let size = SettingsModel.parse(key) {
                     Picker("Частота", selection: model.refreshBinding(for: display)) {
-                        ForEach(model.refreshRates(for: display, width: size.width, height: size.height), id: \.self) { hz in
+                        ForEach(model.refreshRates(for: display, width: size.width, height: size.height, isHiDPI: size.isHiDPI), id: \.self) { hz in
                             Text("\(hz) Гц").tag(hz)
                         }
                     }
                     .labelsHidden()
                     .frame(width: 92)
                 }
+            }
+            if !model.isPinnedModeAvailable(for: display) {
+                Label("Закреплённый режим недоступен на этом устройстве — выберите заново.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
             Text(modeHint(for: display, pinned: pinned))
                 .font(.caption)
@@ -749,11 +759,15 @@ private struct ProfileNameField: View {
     let name: String
     let commit: (String) -> Void
 
-    @State private var draft: String = ""
+    private var _draft = State<String>(wrappedValue: "")
+    private var draft: String {
+        get { _draft.wrappedValue }
+        nonmutating set { _draft.wrappedValue = newValue }
+    }
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField("Имя профиля", text: $draft)
+        TextField("Имя профиля", text: _draft.projectedValue)
             .textFieldStyle(.roundedBorder)
             .focused($focused)
             .onAppear { draft = name }

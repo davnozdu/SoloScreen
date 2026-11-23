@@ -521,7 +521,13 @@ final class Coordinator {
     }
 
     /// Заполняется подсказкой о незнакомых экранах; меню читает это поле.
-    var pendingDisplays: [DisplaySnapshot] = []
+    private(set) var pendingDisplays: [DisplaySnapshot] = []
+
+    func updatePendingDisplays(_ displays: [DisplaySnapshot]) {
+        guard pendingDisplays != displays else { return }
+        pendingDisplays = displays
+        notify()
+    }
 
     func setTrusted(_ trusted: Bool, for identity: DisplayIdentity) {
         trustedDevices.setTrusted(trusted, for: identity)

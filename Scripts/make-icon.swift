@@ -43,18 +43,36 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
 }
 
 let output = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.iconset"
-try? FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
-
-let variants: [(String, CGFloat)] = [
-    ("icon_16x16", 16), ("icon_16x16@2x", 32),
-    ("icon_32x32", 32), ("icon_32x32@2x", 64),
-    ("icon_128x128", 128), ("icon_128x128@2x", 256),
-    ("icon_256x256", 256), ("icon_256x256@2x", 512),
-    ("icon_512x512", 512), ("icon_512x512@2x", 1024),
+let variants: [(name: String, type: String, size: CGFloat)] = [
+    ("icon_16x16", "icp4", 16), ("icon_16x16@2x", "ic11", 32),
+    ("icon_32x32", "icp5", 32), ("icon_32x32@2x", "ic12", 64),
+    ("icon_128x128", "ic07", 128), ("icon_128x128@2x", "ic13", 256),
+    ("icon_256x256", "ic08", 256), ("icon_256x256@2x", "ic14", 512),
+    ("icon_512x512", "ic09", 512), ("icon_512x512@2x", "ic10", 1024),
 ]
-for (name, size) in variants {
-    let rep = drawIcon(size: size)
-    guard let data = rep.representation(using: .png, properties: [:]) else { continue }
-    try? data.write(to: URL(fileURLWithPath: "\(output)/\(name).png"))
+
+if output.hasSuffix(".icns") {
+    // Напрямую собираем контейнер .icns, если iconutil недоступен или отвергает iconset.
+    var body = Data()
+    for variant in variants {
+        let rep = drawIcon(size: variant.size)
+        guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+        var chunkLength = UInt32(8 + png.count).bigEndian
+        body.append(Data(variant.type.utf8))
+        withUnsafeBytes(of: &chunkLength) { body.append(contentsOf: $0) }
+        body.append(png)
+    }
+    var file = Data("icns".utf8)
+    var totalLength = UInt32(8 + body.count).bigEndian
+    withUnsafeBytes(of: &totalLength) { file.append(contentsOf: $0) }
+    file.append(body)
+    try file.write(to: URL(fileURLWithPath: output))
+} else {
+    try? FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
+    for variant in variants {
+        let rep = drawIcon(size: variant.size)
+        guard let data = rep.representation(using: .png, properties: [:]) else { continue }
+        try? data.write(to: URL(fileURLWithPath: "\(output)/\(variant.name).png"))
+    }
 }
 print("иконка собрана: \(output)")

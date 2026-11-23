@@ -22,9 +22,4 @@ final class UpdaterService {
     func checkForUpdates() {
         controller.updater.checkForUpdates()
     }
-
-    var automaticallyChecks: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
-        set { controller.updater.automaticallyChecksForUpdates = newValue }
-    }
 }

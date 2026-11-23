@@ -36,19 +36,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         notifier.onTrustRequest = { [weak self] identity in
-            self?.notifier.markDecided(identity)
+            guard let self else { return }
+            self.notifier.markDecided(identity)
+            Coordinator.shared.updatePendingDisplays(self.notifier.pending)
             Coordinator.shared.setTrusted(true, for: identity)
         }
         notifier.start()
         coordinator.onDisplaysScanned = { [weak self] displays, trusted in
             guard let self else { return }
             self.notifier.noticeIfNew(displays, trusted: trusted)
-            Coordinator.shared.pendingDisplays = self.notifier.pending
+            Coordinator.shared.updatePendingDisplays(self.notifier.pending)
         }
         menuBar.onDecideDisplay = { [weak self] identity, trust in
-            self?.notifier.markDecided(identity)
+            guard let self else { return }
+            self.notifier.markDecided(identity)
+            Coordinator.shared.updatePendingDisplays(self.notifier.pending)
             if trust { Coordinator.shared.setTrusted(true, for: identity) }
-            self?.menuBar?.refresh()
+            self.menuBar?.refresh()
         }
         installSignalHandlers()
         _ = UpdaterService.shared

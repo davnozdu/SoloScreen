@@ -210,8 +210,8 @@ final class SettingsModel: ObservableObject {
             .map { ResolutionOption(width: $0.width, height: $0.height, isHiDPI: $0.isHiDPI) }
     }
 
-    func refreshRates(for display: DisplaySnapshot, width: Int, height: Int) -> [Int] {
-        ModeSelector.refreshRates(forWidth: width, height: height, in: modes(for: display))
+    func refreshRates(for display: DisplaySnapshot, width: Int, height: Int, isHiDPI: Bool? = nil) -> [Int] {
+        ModeSelector.refreshRates(forWidth: width, height: height, isHiDPI: isHiDPI, in: modes(for: display))
     }
 
     /// Ключ выбранного разрешения: `automatic`, когда режим не закреплён.
@@ -238,7 +238,7 @@ final class SettingsModel: ObservableObject {
                     return
                 }
                 // Разрешение выбрано — берём для него лучшую доступную частоту.
-                let best = self.refreshRates(for: display, width: size.width, height: size.height).first ?? 60
+                let best = self.refreshRates(for: display, width: size.width, height: size.height, isHiDPI: size.isHiDPI).first ?? 60
                 self.coordinator.setMode(PreferredMode(width: size.width, height: size.height,
                                                        refreshHz: best, isHiDPI: size.isHiDPI),
                                          for: display)
@@ -282,6 +282,12 @@ final class SettingsModel: ObservableObject {
 
     func isModePinned(for display: DisplaySnapshot) -> Bool {
         activeProfile(for: display)?.mode != nil
+    }
+
+    /// Доступен ли закреплённый в профиле режим среди режимов устройства сейчас.
+    func isPinnedModeAvailable(for display: DisplaySnapshot) -> Bool {
+        guard let preferred = activeProfile(for: display)?.mode else { return true }
+        return ModeSelector.best(for: preferred, from: modes(for: display)) != nil
     }
 
     /// Есть ли у устройства режимы с удвоенной плотностью точек. Для AR-очков

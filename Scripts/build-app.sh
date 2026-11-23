@@ -22,7 +22,9 @@ cp "$BIN/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 
 echo "==> Иконка"
 swift "$ROOT/Scripts/make-icon.swift" "$DIST/AppIcon.iconset" >/dev/null
-iconutil -c icns "$DIST/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+if ! iconutil -c icns "$DIST/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null; then
+  swift "$ROOT/Scripts/make-icon.swift" "$APP/Contents/Resources/AppIcon.icns" >/dev/null
+fi
 rm -rf "$DIST/AppIcon.iconset"
 
 echo "==> Sparkle.framework"
